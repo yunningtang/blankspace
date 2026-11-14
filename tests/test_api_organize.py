@@ -33,7 +33,7 @@ def setup(tmp_path, monkeypatch):
     make(home / "Videos" / "旅行.mp4", 60 * MB, b"v", age_days=400)
     (tmp_path / "D").mkdir()
     bin_dir = tmp_path / "_bin"; bin_dir.mkdir()
-    monkeypatch.setattr(recycle, "_recycle_other", lambda p: shutil.move(p, bin_dir / os.path.basename(p)))
+    monkeypatch.setattr(recycle, "_backend", lambda p: shutil.move(p, bin_dir / os.path.basename(p)))
     defs = [Category("downloads", "下载", "user", [str(home / "Downloads")]),
             Category("videos", "视频", "user", [str(home / "Videos")]),
             Category("pictures", "图片", "user", [str(home / "Pictures")])]

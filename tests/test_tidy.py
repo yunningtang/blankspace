@@ -1,3 +1,4 @@
+from conftest import symlink_or_skip
 import os
 import time
 
@@ -26,7 +27,7 @@ def test_downloads_proposals(tmp_path):
     make(dl / "new.zip", 2)                       # 最近的，不动
     make(dl / "movie.mkv.crdownload", 90)         # 正在下载，不动
     make(dl / ".hidden", 90)                      # 隐藏，不动
-    os.symlink(dl / "report.pdf", dl / "link.pdf")
+    symlink_or_skip(dl / "report.pdf", dl / "link.pdf")
     ps = {p.id.split(":")[-1]: p for p in tidy.propose("downloads", str(dl), str(h / "Pictures"), str(h / "Videos"))}
     shots = {os.path.basename(s): d for s, d in ps["shots"].moves}
     assert set(shots) == {"Screenshot 2024-05-01.png", "屏幕录制 1.mp4"}

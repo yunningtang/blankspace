@@ -1,5 +1,7 @@
 """移动和撤销：同盘改名、跨盘复制核对、同名、各种拒绝、撤销不覆盖。全部在临时文件夹里。"""
 import os
+
+from conftest import symlink_or_skip
 import shutil
 
 import pytest
@@ -130,6 +132,6 @@ def test_undo_never_overwrites(tmp_path, log):
 
 def test_links_are_not_moved(tmp_path, log):
     t = make(tmp_path / "real.txt")
-    os.symlink(t, tmp_path / "link.txt")
+    symlink_or_skip(t, tmp_path / "link.txt")
     plan = mover.plan_moves([(str(tmp_path / "link.txt"), str(tmp_path / "o" / "link.txt"))])
     assert not plan.go

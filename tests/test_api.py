@@ -48,7 +48,7 @@ def world(tmp_path, monkeypatch):
     def fake(p):
         moved.append(p)
         shutil.move(p, bin_dir / f"{len(moved)}_{os.path.basename(p)}")
-    monkeypatch.setattr(recycle, "_recycle_other", fake)
+    monkeypatch.setattr(recycle, "_backend", fake)
     defs = [Category("downloads", "下载", "user", [str(dl)]), Category("projects", "代码项目", "user", [str(proj)])]
     caches = [SafeCache("temp", "临时文件", (str(cache),), min_age_days=1, group="系统")]
     api = Api(drive=str(tmp_path), log=OpLog(tmp_path / "logs"), prefs=Prefs(tmp_path / "prefs.json"),
@@ -156,7 +156,7 @@ def test_duplicates_never_both_removed(tmp_path, monkeypatch):
     make(dl / "毕业照.rar", 60 * MB, age_days=500, fill=b"y")
     make(dl / "毕业照副本.rar", 60 * MB, age_days=498, fill=b"y")
     moved = []
-    monkeypatch.setattr(recycle, "_recycle_other", lambda p: (moved.append(p), shutil.move(p, p + ".x")))
+    monkeypatch.setattr(recycle, "_backend", lambda p: (moved.append(p), shutil.move(p, p + ".x")))
     api = Api(drive=str(tmp_path), log=OpLog(tmp_path / "logs"), prefs=Prefs(tmp_path / "p.json"),
               defs=[Category("downloads", "下载", "user", [str(dl)])], caches=[])
     api.scan(); api.wait_idle()

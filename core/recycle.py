@@ -163,8 +163,12 @@ def _recycle_other(path: str) -> None:
     send2trash(path)
 
 
+# 测试时换成假的回收站（不动真回收站）。正常运行时为 None。
+_backend = None
+
+
 def recycle(path: str) -> None:
     """把一个文件或文件夹移到回收站；失败抛 OSError。调用前必须先过 safety.can_delete。"""
-    (_recycle_windows if WINDOWS else _recycle_other)(path)
+    (_backend or (_recycle_windows if WINDOWS else _recycle_other))(path)
     if os.path.lexists(path):
         raise OSError(0, "移动后文件还在原处，可能有部分文件正在使用")

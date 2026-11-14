@@ -1,8 +1,10 @@
-__pycache__/
 *.pyc
+*.spec
 .pytest_cache/
-logs/
+.venv/
+__pycache__/
 build/
 dist/
-*.spec
-.venv/
+logs/
+packaging/ChineseSimplified.isl
+!packaging/liubai.spec

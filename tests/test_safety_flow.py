@@ -1,5 +1,7 @@
 """删除流程的安全测试：每一条规则一个测试。全部在临时文件夹里进行。"""
 import os
+
+from conftest import symlink_or_skip
 import time
 
 import pytest
@@ -32,7 +34,7 @@ def fake_bin(monkeypatch, tmp_path):
     def fake(p):
         moved.append(p)
         shutil.move(p, bin_dir / f"{len(moved)}_{os.path.basename(p)}")
-    monkeypatch.setattr(recycle, "_recycle_other", fake)
+    monkeypatch.setattr(recycle, "_backend", fake)
     return moved
 
 
@@ -89,7 +91,7 @@ def test_always_says_space_comes_back_after_emptying(tmp_path):
 
 def test_recycle_checks_file_really_left(tmp_path, monkeypatch):
     f = make(tmp_path / "a.bin")
-    monkeypatch.setattr(recycle, "_recycle_other", lambda p: None)  # 假装成功，其实没动
+    monkeypatch.setattr(recycle, "_backend", lambda p: None)  # 假装成功，其实没动
     rep = cleaner.move_to_trash([str(f)], log=log(tmp_path))
     assert rep.moved == [] and "还在原处" in rep.failed[0][1]
 
@@ -118,7 +120,7 @@ def test_onedrive_is_never_deleted(tmp_path, lists):
 def test_links_are_not_deleted(tmp_path):
     target = make(tmp_path / "real.txt")
     link = tmp_path / "link.txt"
-    os.symlink(target, link)
+    symlink_or_skip(target, link)
     ok, why = safety.can_delete(link)
     assert not ok and "链接" in why
 
@@ -127,7 +129,7 @@ def test_link_into_protected_folder_is_refused(tmp_path, lists):
     prot = tmp_path / "prot"
     make(prot / "secret.txt")
     lists._EXTRA.append(safety._norm(prot))
-    os.symlink(prot, tmp_path / "door")
+    symlink_or_skip(prot, tmp_path / "door", target_is_directory=True)
     # 通过链接指进受保护目录的路径：真实路径被保护，所以拒绝
     assert not safety.can_delete(tmp_path / "door" / "secret.txt")[0]
 
@@ -223,7 +225,7 @@ def test_one_failure_does_not_stop_others(tmp_path, monkeypatch):
         if p.endswith("1.bin"):
             raise OSError(32, "正在使用")
         shutil.move(p, p + ".gone")
-    monkeypatch.setattr(recycle, "_recycle_other", flaky)
+    monkeypatch.setattr(recycle, "_backend", flaky)
     rep = cleaner.move_to_trash([str(f) for f in files], log=log(tmp_path))
     assert len(rep.moved) == 2 and len(rep.failed) == 1
 

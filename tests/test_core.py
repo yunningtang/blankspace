@@ -93,7 +93,7 @@ def fake_bin(monkeypatch, tmp_path):
     def fake(p):
         moved.append(p)
         shutil.move(p, bin_dir / (str(len(moved)) + "_" + os.path.basename(p)))
-    monkeypatch.setattr(recycle, "_recycle_other", fake)
+    monkeypatch.setattr(recycle, "_backend", fake)
     return moved
 
 

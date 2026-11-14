@@ -30,7 +30,16 @@ A calm disk cleaner for Windows — see where your space went, clean caches safe
 
 完整的规则见 [安全与流程](docs/安全与流程.md)。
 
-## 安装和运行
+## 下载
+
+到 [Releases](https://github.com/yunningtang/blankspace/releases) 下载最新版：
+
+- **Liubai-Setup-x.x.x.exe**：安装版，双击安装，不需要管理员权限。
+- **Liubai-x.x.x-portable.zip**：便携版，解压后双击 `Liubai.exe`。
+
+需要 Windows 10 或 11（64 位）。程序没有数字签名，第一次打开时如果 Windows 提示“已保护你的电脑”，点“更多信息”→“仍要运行”。
+
+## 从源码运行
 
 需要 Windows 10 或 11，以及 [Python 3.10 以上](https://www.python.org/downloads/)（安装时勾选 “Add python.exe to PATH”）。
 
@@ -61,14 +70,18 @@ python main.py
 - [开发说明](docs/开发说明.md)：代码结构、怎么测试、怎么打包
 - [更新记录](CHANGELOG.md)
 
-## 打包成 exe
+## 打包
+
+安装程序由 GitHub Actions 在 Windows 上自动生成（`.github/workflows/windows.yml`）：每次推送都会先在 Windows 上跑全部测试，再打包；推送 `v` 开头的标签（比如 `v0.4.0`）时自动发布到 Releases。
+
+在自己的 Windows 电脑上打包：
 
 ```bash
 pip install pyinstaller
 ```
 
 ```bash
-pyinstaller --noconfirm --windowed --name 留白 --add-data "webui;webui" --collect-data customtkinter main.py
+pyinstaller --noconfirm packaging/liubai.spec
 ```
 
-生成的程序在 `dist\留白\留白.exe`。清理记录和设置保存在 `%LOCALAPPDATA%\Liubai\`。
+生成的程序在 `dist\Liubai\Liubai.exe`。再用 [Inno Setup](https://jrsoftware.org/isinfo.php) 编译 `packaging\installer.iss` 就得到安装程序。清理记录和设置保存在 `%LOCALAPPDATA%\Liubai\`。
