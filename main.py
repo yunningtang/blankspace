@@ -6,7 +6,7 @@
 import os
 import sys
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 
 def resource(*parts):
@@ -23,20 +23,42 @@ class Bridge:
         self._window = None
         self._maxed = False
 
-    # 后端
-    def state(self): return self._api.state()
-    def scan(self): return self._api.scan()
+    # 开始、选地方、扫描
+    def start(self): return self._api.start()
+    def set_consent(self, allow_changes): return self._api.set_consent(allow_changes)
+    def set_allow_changes(self, on): return self._api.set_allow_changes(on)
+    def open_place(self, path, rescan=False): return self._api.open_place(path, rescan)
+    def scan_control(self, action): return self._api.scan_control(action)
+    def close_place(self): return self._api.close_place()
     def cancel(self): return self._api.cancel()
-    def inspect(self, key): return self._api.inspect(key)
+    def state(self): return self._api.state()
+    def view(self, path): return self._api.view(path)
+
+    def pick_folder(self):
+        from core.winshell import pick_folder
+        return {"path": pick_folder(self._window)}
+
+    # 只读的工具
+    def tool(self, kind, path): return self._api.tool(kind, path)
+    def caches(self): return self._api.caches()
+    def processes(self): return self._api.processes()
+    def drives(self, exclude=None): return self._api.drives(exclude)
+    def history(self): return self._api.history()
     def set_keep(self, item_id, on=True): return self._api.set_keep(item_id, on)
     def set_keeper(self, group_id, file_id): return self._api.set_keeper(group_id, file_id)
+
+    # 动文件（后端还会检查“允许整理和清理”的开关）
     def plan(self, kind, ids, target=None): return self._api.plan(kind, ids, target)
     def execute(self, plan_id): return self._api.execute(plan_id)
     def undo(self, batch): return self._api.undo(batch)
     def clear_job(self): return self._api.clear_job()
-    def history(self): return self._api.history()
-    def open_recycle_bin(self): return self._api.open_recycle_bin()
+    def end_processes(self, pids): return self._api.end_processes(pids)
+
+    # 打开系统窗口
     def reveal(self, path): return self._api.reveal(path)
+    def open_folder(self, path): return self._api.open_folder(path)
+    def open_file(self, path): return self._api.open_file(path)
+    def open_recycle_bin(self): return self._api.open_recycle_bin()
     def open_storage_settings(self): return self._api.open_storage_settings()
 
     # 窗口
@@ -51,16 +73,24 @@ class Bridge:
         return {"maxed": self._maxed}
 
     def win_close(self):
-        self._api.cancel()
+        self._api.cancel()            # 关窗口就停止扫描
         if self._window:
             self._window.destroy()
+
+
+def start_path_from_args(argv):
+    """从资源管理器右键带进来的文件夹（或盘）。"""
+    for a in argv[1:]:
+        if not a.startswith("--") and os.path.isdir(a):
+            return os.path.abspath(a)
+    return None
 
 
 def run_web():
     import webview  # pywebview
 
     from core.api import Api
-    bridge = Bridge(Api())
+    bridge = Bridge(Api(start_path=start_path_from_args(sys.argv)))
     window = webview.create_window(
         "留白", resource("webui", "index.html"), js_api=bridge,
         width=1200, height=760, min_size=(960, 620),

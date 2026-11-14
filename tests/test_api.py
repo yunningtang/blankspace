@@ -1,27 +1,26 @@
-"""后端接口的完整流程测试：扫描 → 看看里面 → 预检 → 执行。全部在临时文件夹里。"""
+"""后端接口的完整流程：选地方 → 扫描 → 往里走 → 工具 → 预检 → 执行 → 撤销。全部在临时文件夹里。"""
 import os
 import shutil
 import time
 
 import pytest
 
-from core import recycle, safety
+from core import recycle, tree
 from core.api import Api
 from core.oplog import OpLog
 from core.prefs import Prefs
 from core.safety import SafeCache
-from core.space import Category
 
 MB = 1024 * 1024
 
 
-def make(path, size, age_days=0, fill=None):
+def make(path, size=MB, data=None, age_days=0):
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "wb") as f:
-        if fill is None:
+        if data is None:
             f.truncate(size)
         else:
-            f.write(fill * size)
+            f.write(data * size)
     if age_days:
         t = time.time() - age_days * 86400
         os.utime(path, (t, t))
@@ -31,162 +30,196 @@ def make(path, size, age_days=0, fill=None):
 @pytest.fixture
 def world(tmp_path, monkeypatch):
     home = tmp_path / "home"
-    dl, proj, cache = home / "Downloads", home / "projects", home / "AppCache" / "Temp"
-    make(dl / "movie.mkv", 80 * MB, age_days=500)                 # 很久没用
-    make(dl / "AppSetup.exe", 60 * MB, age_days=40)               # 安装包
-    make(dl / "photos.zip", 70 * MB, age_days=40)                 # 已经解压过
+    dl = home / "Downloads"
+    make(dl / "movie.mkv", 80 * MB, age_days=500)
+    make(dl / "AppSetup.exe", 60 * MB, age_days=40)
+    make(dl / "photos.zip", 70 * MB, age_days=40)
     (dl / "photos").mkdir()
-    make(dl / "a.bin", 55 * MB, age_days=40, fill=b"x")           # 两份一样的
-    make(dl / "b.bin", 55 * MB, age_days=40, fill=b"x")
-    make(dl / "new.pdf", 52 * MB)                                 # 最近还在用
-    make(proj / "web" / "package.json", 10)
-    make(proj / "web" / "node_modules" / "lib" / "big.js", 30 * MB)
-    make(cache / "old.tmp", 5 * MB, age_days=3)
-    bin_dir = tmp_path / "_bin"
-    bin_dir.mkdir()
+    make(dl / "a.bin", 55 * MB, b"x", age_days=40)
+    make(dl / "b.bin", 55 * MB, b"x", age_days=39)
+    make(dl / "Screenshot 2025-01-01.png", 10, b"s", age_days=40)
+    make(home / "Pictures" / "IMG_20240301_123045.jpg", 10, b"p")
+    make(home / "Documents" / "方案终版.docx", 10, b"1", age_days=3)
+    make(home / "Documents" / "方案最终版.docx", 10, b"2", age_days=1)
+    make(home / "AppCache" / "Temp" / "old.tmp", 5 * MB, age_days=3)
+    (tmp_path / "D").mkdir()
+    bin_dir = tmp_path / "_bin"; bin_dir.mkdir()
     moved = []
     def fake(p):
-        moved.append(p)
-        shutil.move(p, bin_dir / f"{len(moved)}_{os.path.basename(p)}")
+        moved.append(p); shutil.move(p, bin_dir / f"{len(moved)}_{os.path.basename(p)}")
     monkeypatch.setattr(recycle, "_backend", fake)
-    defs = [Category("downloads", "下载", "user", [str(dl)]), Category("projects", "代码项目", "user", [str(proj)])]
-    caches = [SafeCache("temp", "临时文件", (str(cache),), min_age_days=1, group="系统")]
-    api = Api(drive=str(tmp_path), log=OpLog(tmp_path / "logs"), prefs=Prefs(tmp_path / "prefs.json"),
-              defs=defs, caches=caches)
-    return api, dl, moved, tmp_path
+    prefs = Prefs(tmp_path / "prefs.json")
+    api = Api(log=OpLog(tmp_path / "logs"), prefs=prefs, home=str(home), snapshots=str(tmp_path / "snaps"),
+              caches=[SafeCache("temp", "临时文件", (str(home / "AppCache" / "Temp"),), min_age_days=1)],
+              move_targets=[str(tmp_path / "D")])
+    return api, home, moved, tmp_path
 
 
-def test_scan_reports_blocks_cleanables_and_suggestions(world):
-    api, dl, _, _ = world
-    assert api.scan()["started"]
+def allow(api):
+    api.set_consent(True)
+
+
+def opened(api, path):
+    assert api.open_place(str(path))["ok"]
     assert api.wait_idle()
+
+
+def run(api, plan):
+    assert "error" not in plan, plan
+    assert api.execute(plan["id"])["started"]
+    assert api.wait_idle()
+    return api.state()["job"]
+
+
+def test_nothing_is_read_until_a_place_is_chosen(world):
+    api, home, _, _ = world
+    s = api.start()
+    assert s["drives"] and not s["consented"] and not s["allow_changes"]
+    assert api.state()["place"] is None and not api.state()["scan"]["running"]
+
+
+def test_scan_then_navigate_instantly(world):
+    api, home, _, _ = world
+    opened(api, home)
     st = api.state()
-    keys = {b["key"] for b in st["blocks"]}
-    assert {"downloads", "projects", "c:temp"} <= keys
-    assert [c["key"] for c in st["cleanables"]] == ["temp"]
-    assert st["suggest"][0]["key"] == "downloads" and st["suggest"][0]["maybe"] > 0
-    assert not st["scanning"] and st["phase"] == ""
+    assert st["place"]["root"] == str(home) and st["place"]["size"] > 300 * MB
+    v = api.view(str(home))
+    assert v["items"][0]["name"] == "Downloads" and v["crumbs"][-1]["name"] == "home"
+    dl = api.view(str(home / "Downloads"))
+    assert "tidy" in dl["tools"] and [c["name"] for c in dl["crumbs"]] == ["home", "Downloads"]
+    assert "tidy" not in api.view(str(home / "Documents"))["tools"]
 
 
-def test_inspect_explains_each_file(world):
-    api, dl, _, _ = world
-    api.scan(); api.wait_idle()
-    d = api.inspect("downloads")
-    items = {i["name"]: (g["lvl"], i["why"]) for g in d["groups"] for i in g["items"]}
-    assert items["AppSetup.exe"][0] == "maybe" and "安装" in items["AppSetup.exe"][1]
-    assert items["photos.zip"][0] == "maybe" and "解压" in items["photos.zip"][1]
-    assert items["b.bin"][0] == "maybe" and "一模一样" in items["b.bin"][1]
-    assert items.get("a.bin", ("rest",))[0] != "maybe"      # 留最早的一份，不建议移走
-    assert items["movie.mkv"][0] == "maybe" and "没有改动过" in items["movie.mkv"][1]
-    assert items["new.pdf"][0] == "keep"
-    p = api.inspect("projects")
-    nm = [i for g in p["groups"] for i in g["items"] if i["name"] == "node_modules"]
-    assert nm and nm[0]["dir"] and "重新生成" in nm[0]["why"]
+def test_snapshot_used_next_time_without_reading_disk(world):
+    api, home, _, tmp = world
+    opened(api, home)
+    api2 = Api(log=api.log, prefs=api.prefs, home=api.home, snapshots=str(tmp / "snaps"))
+    r = api2.open_place(str(home))
+    assert r["loaded"] and not r["scanning"]
+    assert api2.start()["recent"][0]["root"] == str(home)
 
 
-def test_plan_is_read_only_and_execute_moves(world):
-    api, dl, moved, _ = world
-    api.scan(); api.wait_idle()
-    d = api.inspect("downloads")
-    ids = [i["id"] for g in d["groups"] if g["lvl"] == "maybe" for i in g["items"] if i["name"] in ("AppSetup.exe", "b.bin")]
-    pl = api.plan("files", ids)
-    assert pl["count"] == 2 and moved == []                 # 预检不动文件
-    assert any("清空回收站" in w for w in pl["warnings"])
-    assert api.execute(pl["id"])["started"]
-    api.wait_idle()
-    st = api.state()
-    assert st["job"]["done"] and st["job"]["moved"] == 2
-    assert sorted(os.path.basename(m) for m in moved) == ["AppSetup.exe", "b.bin"]
-    assert (dl / "a.bin").exists()                          # 另一份还在
-    names = {i["name"] for g in api.inspect("downloads")["groups"] for i in g["items"]}
-    assert "AppSetup.exe" not in names
+def test_changes_are_locked_until_allowed(world):
+    api, home, moved, _ = world
+    opened(api, home)
+    out = api.tool("dupes", str(home / "Downloads"))
+    ids = [f["id"] for g in out["dupes"] for f in g["files"] if not f["keeper"]]
+    assert "error" in api.plan("dupes", ids)                     # 没打开开关：连预检都不给
+    assert not api.execute("whatever")["started"]
+    allow(api)
+    job = run(api, api.plan("dupes", ids))
+    assert job["moved"] == 1 and len(moved) == 1
+    assert sum(1 for n in ("a.bin", "b.bin") if (home / "Downloads" / n).exists()) == 1
 
 
-def test_plan_expires_and_cannot_run_twice(world):
-    api, *_ = world
-    api.scan(); api.wait_idle()
-    pl = api.plan("caches", ["temp"])
-    assert api.execute(pl["id"])["started"]
-    api.wait_idle()
-    assert not api.execute(pl["id"])["started"]             # 同一份确认只能用一次
+def test_inspect_tool_and_recycle_updates_tree(world):
+    api, home, moved, _ = world
+    opened(api, home); allow(api)
+    out = api.tool("inspect", str(home / "Downloads"))
+    items = {i["name"]: g["lvl"] for g in out["groups"] for i in g["items"]}
+    assert items["AppSetup.exe"] == "maybe" and items["photos.zip"] == "maybe"
+    before = api.view(str(home / "Downloads"))["size"]
+    ids = [i["id"] for g in out["groups"] if g["lvl"] == "maybe" for i in g["items"] if i["name"] == "AppSetup.exe"]
+    job = run(api, api.plan("files", ids))
+    assert job["moved"] == 1
+    assert api.view(str(home / "Downloads"))["size"] == before - 60 * MB   # 树里的大小跟着变了
 
 
-def test_only_maybe_items_can_be_planned(world):
-    api, dl, moved, _ = world
-    api.scan(); api.wait_idle()
-    d = api.inspect("downloads")
-    keep_ids = [i["id"] for g in d["groups"] if g["lvl"] != "maybe" for i in g["items"]]
-    assert api.plan("files", keep_ids)["count"] == 0         # “还在用”“你的文件”不能被移走
-
-
-def test_file_changed_after_inspect_is_refused(world):
-    api, dl, moved, _ = world
-    api.scan(); api.wait_idle()
-    d = api.inspect("downloads")
-    sid = next(i["id"] for g in d["groups"] for i in g["items"] if i["name"] == "movie.mkv")
-    with open(dl / "movie.mkv", "ab") as f:
-        f.write(b"changed")
-    pl = api.plan("files", [sid])
+def test_right_click_recycle_uses_scan_fingerprint(world, monkeypatch):
+    from core import safety
+    api, home, moved, _ = world
+    monkeypatch.setattr(safety, "_KEEP", safety._KEEP + [safety._norm(home / "Downloads")])  # 假的主目录
+    opened(api, home); allow(api)
+    f = home / "Downloads" / "movie.mkv"
+    with open(f, "ab") as h:
+        h.write(b"changed after scan")
+    pl = api.plan("paths", [str(f)])
     assert pl["count"] == 0 and "改动过" in pl["refused"][0][1]
+    assert api.plan("paths", [str(home / "Downloads")])["count"] == 0   # 个人文件夹本身不能删
 
 
-def test_keep_is_remembered(world):
-    api, dl, _, tmp = world
-    api.scan(); api.wait_idle()
-    d = api.inspect("downloads")
-    sid = next(i["id"] for g in d["groups"] for i in g["items"] if i["name"] == "movie.mkv")
-    api.set_keep(sid, True)
-    api2 = Api(drive=api.drive, log=api.log, prefs=Prefs(tmp / "prefs.json"), defs=api._defs, caches=api._caches)
-    api2.scan(); api2.wait_idle()
-    lvl = {i["name"]: g["lvl"] for g in api2.inspect("downloads")["groups"] for i in g["items"]}
-    assert lvl["movie.mkv"] == "keep"
+def test_rename_and_undo(world):
+    api, home, _, _ = world
+    opened(api, home); allow(api)
+    out = api.tool("rename", str(home / "Pictures"))
+    assert out["renames"][0]["to"] == "2024-03-01 12.30.45.jpg" and out["renames"][0]["when"] == "name"
+    job = run(api, api.plan("rename", [r["id"] for r in out["renames"]]))
+    assert (home / "Pictures" / "2024-03-01 12.30.45.jpg").exists()
+    assert [x["name"] for x in api.view(str(home / "Pictures"))["items"]] == ["2024-03-01 12.30.45.jpg"]
+    api.undo(job["batch"]); api.wait_idle()
+    assert (home / "Pictures" / "IMG_20240301_123045.jpg").exists()
 
 
-def test_history_lists_moves(world):
+def test_versions_tool(world):
+    api, home, _, _ = world
+    opened(api, home); allow(api)
+    out = api.tool("versions", str(home / "Documents"))
+    g = out["groups"][0]
+    assert g["keep"] == "方案最终版.docx" and [o["name"] for o in g["older"]] == ["方案终版.docx"]
+    run(api, api.plan("versions", [g["id"]]))
+    assert (home / "Documents" / "旧版本" / "方案终版.docx").exists()
+
+
+def test_tidy_tool(world):
+    api, home, _, _ = world
+    opened(api, home); allow(api)
+    out = api.tool("tidy", str(home / "Downloads"))
+    assert any(p["title"] == "截图和录屏" for p in out["proposals"])
+    run(api, api.plan("tidy", [p["id"] for p in out["proposals"] if p["title"] == "截图和录屏"]))
+    assert list((home / "Pictures" / "截图").rglob("Screenshot 2025-01-01.png"))
+
+
+def test_move_to_other_drive_keeps_structure(world):
+    api, home, _, tmp = world
+    opened(api, home); allow(api)
+    src = home / "Downloads" / "movie.mkv"
+    job = run(api, api.plan("move", [str(src)], str(tmp / "D")))
+    assert (tmp / "D" / "留白挪出" / "Downloads" / "movie.mkv").exists() and not src.exists()
+    api.undo(job["batch"]); api.wait_idle()
+    assert src.exists()
+
+
+def test_caches_on_demand_and_busy_apps(world, monkeypatch):
+    api, home, moved, _ = world
+    from core import procs
+    monkeypatch.setattr(procs, "busy_caches", lambda keys: {"temp": "某个程序"})
+    out = api.caches()
+    assert out["items"][0]["busy"] == "某个程序" and not out["items"][0]["default"]
+    allow(api)
+    pl = api.plan("caches", ["temp"])
+    assert pl["count"] == 0 and "开着" in pl["refused"][0][1]
+
+
+def test_scan_pause_and_cancel(world):
+    api, home, _, _ = world
+    api.scan_control("pause")
+    api.open_place(str(home), rescan=True)
+    api.scan_control("cancel")
+    assert api.wait_idle(10)
+    assert not api.state()["scan"]["running"]
+
+
+def test_end_processes_needs_permission(world):
     api, *_ = world
-    api.scan(); api.wait_idle()
-    api.execute(api.plan("caches", ["temp"])["id"]); api.wait_idle()
-    recs = api.history()["records"]
-    assert recs and recs[0]["ok"]
+    assert not api.end_processes([123456])["ok"]
 
 
-def test_duplicates_never_both_removed(tmp_path, monkeypatch):
-    """两份一样的旧文件：一份标“重复”，另一份不能也被建议移走；同时选了也只移一份。"""
-    dl = tmp_path / "home" / "Downloads"
-    make(dl / "毕业照.rar", 60 * MB, age_days=500, fill=b"y")
-    make(dl / "毕业照副本.rar", 60 * MB, age_days=498, fill=b"y")
-    moved = []
-    monkeypatch.setattr(recycle, "_backend", lambda p: (moved.append(p), shutil.move(p, p + ".x")))
-    api = Api(drive=str(tmp_path), log=OpLog(tmp_path / "logs"), prefs=Prefs(tmp_path / "p.json"),
-              defs=[Category("downloads", "下载", "user", [str(dl)])], caches=[])
-    api.scan(); api.wait_idle()
-    d = api.inspect("downloads")
-    lvl = {i["name"]: g["lvl"] for g in d["groups"] for i in g["items"]}
-    assert lvl["毕业照副本.rar"] == "maybe" and lvl["毕业照.rar"] != "maybe"
-    # 即使有人把两份的 id 都传进来，也只会移一份
-    all_ids = [i["id"] for g in d["groups"] for i in g["items"]]
-    pl = api.plan("files", all_ids)
-    assert pl["count"] == 1
+def test_history_lists_batches(world):
+    api, home, _, _ = world
+    opened(api, home); allow(api)
+    out = api.tool("rename", str(home / "Pictures"))
+    run(api, api.plan("rename", [r["id"] for r in out["renames"]]))
+    h = api.history()
+    assert h["batches"] and h["batches"][0]["undoable"]
 
 
-def test_cleanable_items_not_suggested_twice(world):
-    api, dl, _, tmp = world
-    api._caches = api._caches + [SafeCache("installers", "旧安装包", (str(dl),), patterns=("*setup*.exe",), min_age_days=30)]
-    api.scan(); api.wait_idle()
-    names = {i["name"] for g in api.inspect("downloads")["groups"] for i in g["items"]}
-    assert "AppSetup.exe" not in names
-
-
-def test_skip_matches_regardless_of_case(tmp_path):
-    """Windows 上缓存路径是小写的，文件路径是原样的；比较时要不分大小写。"""
-    import core.inspect as insp
-    from core.inspect import inspect
-    dl = tmp_path / "Downloads"
-    f = make(dl / "AppSetup.exe", 60 * MB, age_days=40)
-    real_norm = os.path.normcase
-    try:
-        insp.os.path.normcase = lambda p: p.lower()        # 模拟 Windows 的不分大小写
-        out = inspect("downloads", [str(dl)], skip={str(f).lower()})
-    finally:
-        insp.os.path.normcase = real_norm
-    assert out.items == []
+def test_inspect_small_folder_sees_smaller_installers(world):
+    """看一个小文件夹时，几 M 的旧安装包也要能看到（不能只看 50 M 以上的）。"""
+    api, home, moved, tmp = world
+    small = home / "Small"
+    make(small / "setup_tool.exe", 3 * MB, age_days=400)
+    make(small / "notes.txt", 10, b"n")
+    opened(api, small)
+    out = api.tool("inspect", str(small))
+    names = [i["name"] for g in out["groups"] if g["lvl"] == "maybe" for i in g["items"]]
+    assert "setup_tool.exe" in names

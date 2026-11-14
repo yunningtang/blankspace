@@ -102,8 +102,9 @@ class SafeCache:
     patterns: tuple[str, ...] = ("*",)  # 只清理名字匹配的子项
     min_age_days: float = 0         # 只清理多少天没改过的
     default: bool = True            # 默认是否勾选
-    note: str = ""                  # 给用户看：这是什么、清了会怎样
+    note: str = ""                  # 给用户看：这是什么
     group: str = "系统"             # 界面分组：系统 / 浏览器 / 聊天和办公 / 开发工具
+    cost: str = ""                  # 清了以后要付出的代价（空表示几乎没有）
 
 
 def _home(*parts) -> str:
@@ -137,50 +138,64 @@ def _build_safe_caches() -> list[SafeCache]:
                       patterns=("thumbcache_*.db",),
                       note="图片的小预览图，会自动重新生成。资源管理器开着时大多会跳过", group="系统"),
             SafeCache("chrome", "Chrome 缓存", _chromium(_local("Google", "Chrome")),
+                      default=False, cost="清了以后，常去的网页第一次打开会慢一些，要重新下载图片和脚本",
                       note="网页图片和脚本的缓存。不影响登录、书签和历史记录", group="浏览器"),
             SafeCache("edge", "Edge 缓存", _chromium(_local("Microsoft", "Edge")),
+                      default=False, cost="清了以后，常去的网页第一次打开会慢一些，要重新下载图片和脚本",
                       note="网页缓存。不影响登录、收藏夹和历史记录", group="浏览器"),
             SafeCache("firefox", "Firefox 缓存", (_local("Mozilla", "Firefox", "Profiles", "*", "cache2"),),
+                      default=False, cost="清了以后，常去的网页第一次打开会慢一些，要重新下载图片和脚本",
                       note="网页缓存。不影响登录、书签和历史记录", group="浏览器"),
             SafeCache("wxcache", "微信缓存",
                       (_home("Documents", "WeChat Files", "*", "FileStorage", "Cache"),
                        _home("Documents", "xwechat_files", "*", "cache")),
-                      default=False,
-                      note="看过的图片和视频的缓存，不含聊天记录和收到的文件。清掉后再看会重新加载",
+                      default=False, cost="清了以后，聊天里看过的图片和视频要重新加载，过期的可能看不了",
+                      note="看过的图片和视频的缓存，不含聊天记录和收到的文件",
                       group="聊天和办公"),
             SafeCache("teams", "Teams 缓存",
                       tuple(_appdata("Microsoft", "Teams", d) for d in ("Cache", "Code Cache", "GPUCache")),
-                      note="经典版 Teams 的网页缓存。不含聊天记录", group="聊天和办公"),
+                      note="经典版 Teams 的网页缓存。不含聊天记录", group="聊天和办公",
+                      default=False, cost="清了以后，Teams 第一次打开会慢一些"),
             SafeCache("vscode", "VS Code 缓存",
                       tuple(_appdata("Code", d) for d in ("Cache", "CachedData", "Code Cache", "GPUCache", "logs")),
-                      note="编辑器的缓存和旧日志。不影响设置和插件", group="开发工具"),
+                      note="编辑器的缓存和旧日志。不影响设置和插件", group="开发工具",
+                      default=False, cost="清了以后，VS Code 第一次打开会慢一些"),
             SafeCache("npm", "npm 缓存", (_local("npm-cache", "_cacache"),),
+                      default=False, cost="清了以后，下次安装依赖要重新下载，可能要很久",
                       note="下载过的 JavaScript 包，需要时会重新下载", group="开发工具"),
             SafeCache("pip", "pip 缓存", (_local("pip", "Cache"),),
+                      default=False, cost="清了以后，下次安装依赖要重新下载，可能要很久",
                       note="下载过的 Python 包，需要时会重新下载", group="开发工具"),
             SafeCache("uv", "uv 缓存", (_local("uv", "cache"),),
+                      default=False, cost="清了以后，下次安装依赖要重新下载，可能要很久",
                       note="下载过的 Python 包，需要时会重新下载", group="开发工具"),
             SafeCache("yarn", "Yarn 缓存", (_local("Yarn", "Cache"),),
+                      default=False, cost="清了以后，下次安装依赖要重新下载，可能要很久",
                       note="下载过的 JavaScript 包，需要时会重新下载", group="开发工具"),
             SafeCache("gradle", "Gradle 缓存", (_home(".gradle", "caches"),), default=False,
-                      note="安卓和 Java 项目的依赖。下次编译会重新下载，可能要很久", group="开发工具"),
+                      note="安卓和 Java 项目的依赖", group="开发工具",
+                      cost="清了以后，下次编译要重新下载全部依赖，可能要很久"),
         ]
     else:
         caches = [
             SafeCache("pip", "pip 缓存", (_home(".cache", "pip"),),
+                      default=False, cost="清了以后，下次安装依赖要重新下载，可能要很久",
                       note="下载过的 Python 包，需要时会重新下载", group="开发工具"),
             SafeCache("npm", "npm 缓存", (_home(".npm", "_cacache"),),
+                      default=False, cost="清了以后，下次安装依赖要重新下载，可能要很久",
                       note="下载过的 JavaScript 包，需要时会重新下载", group="开发工具"),
             SafeCache("uv", "uv 缓存", (_home(".cache", "uv"),),
+                      default=False, cost="清了以后，下次安装依赖要重新下载，可能要很久",
                       note="下载过的 Python 包，需要时会重新下载", group="开发工具"),
             SafeCache("chrome", "Chrome 缓存", (_home(".cache", "google-chrome", "*", "Cache"),),
+                      default=False, cost="清了以后，常去的网页第一次打开会慢一些，要重新下载图片和脚本",
                       note="网页缓存。不影响登录、书签和历史记录", group="浏览器"),
         ]
     # 只认名字像安装包的；直接从下载里运行的便携程序（比如 xxx.exe）不算。默认不勾选。
     caches.append(SafeCache("installers", "下载里的旧安装包", (_home("Downloads"),),
                             patterns=("*.msi", "*setup*.exe", "*install*.exe", "*installer*.exe",
                                       "*.dmg", "*.pkg"),
-                            min_age_days=30, default=False,
+                            min_age_days=30, default=False, cost="以后要重装这些程序，得重新下载安装包",
                             note="下载文件夹里 30 天前、名字像安装包的文件（setup、install、.msi）。程序装好以后就用不到了",
                             group="系统"))
     return [c for c in caches if all(c.roots)]

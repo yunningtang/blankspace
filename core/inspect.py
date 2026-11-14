@@ -134,6 +134,23 @@ def _full_hash(path: str, cancel: threading.Event | None) -> str | None:
         return None
 
 
+def tone_for(path: str, home: str | None = None) -> str:
+    """按文件夹判断口吻：下载、桌面、微信、视频……其余按“你的文件”。"""
+    from pathlib import Path
+    h = os.path.normcase(os.path.abspath(home or str(Path.home())))
+    p = os.path.normcase(os.path.abspath(path))
+    table = [("wechat", os.path.join(h, "documents", "wechat files")), ("wechat", os.path.join(h, "documents", "xwechat_files")),
+             ("qq", os.path.join(h, "documents", "tencent files")),
+             ("downloads", os.path.join(h, "downloads")), ("desktop", os.path.join(h, "desktop")),
+             ("videos", os.path.join(h, "videos")), ("pictures", os.path.join(h, "pictures")),
+             ("documents", os.path.join(h, "documents"))]
+    for t, base in table:
+        b = os.path.normcase(base)
+        if p == b or p.startswith(b + os.sep):
+            return t
+    return "other"
+
+
 def _is_installer(name: str) -> bool:
     n = name.lower()
     return n.endswith(INSTALLER_EXT) or (n.endswith(".exe") and any(w in n for w in INSTALLER_WORDS))
@@ -141,15 +158,17 @@ def _is_installer(name: str) -> bool:
 
 def inspect(key: str, paths: list[str], cancel: threading.Event | None = None,
             keep: set[str] | frozenset[str] = frozenset(), now: float | None = None,
-            skip: set[str] | frozenset[str] = frozenset()) -> Inspection:
+            skip: set[str] | frozenset[str] = frozenset(), tone: str | None = None,
+            min_file: int = MIN_FILE) -> Inspection:
     """看一类空间。paths 是这一类的文件夹；keep 是用户说过“留着”的路径；
-    skip 是已经在“可放心清理”里的路径（不重复建议，也不重复计算）。"""
+    skip 是已经在“可放心清理”里的路径（不重复建议，也不重复计算）。
+    min_file：多大的文件才逐个看。看整个盘时 50 M；看一个小文件夹时调小，否则什么都看不到。"""
     t0 = time.monotonic()
     now = now or time.time()
     # Windows 路径不分大小写：统一成小写的绝对路径再比较，否则同一个文件会被算两次
     norm = lambda p: os.path.normcase(os.path.abspath(p))  # noqa: E731
     skip = frozenset(norm(p) for p in skip)
-    tone = TONE.get(key, DEFAULT_TONE)
+    tone = TONE.get(tone or key, DEFAULT_TONE)
     out = Inspection(key)
     files: list[tuple[int, str, os.stat_result]] = []   # 小顶堆，只留最大的
     regen: list[tuple[str, str]] = []                    # (路径, 名字)
@@ -183,7 +202,7 @@ def inspect(key: str, paths: list[str], cancel: threading.Event | None = None,
                     stack.append(e.path)
                 else:
                     st = e.stat(follow_symlinks=False)
-                    if is_cloud_placeholder(st) or st.st_size < MIN_FILE or (skip and norm(e.path) in skip):
+                    if is_cloud_placeholder(st) or st.st_size < min_file or (skip and norm(e.path) in skip):
                         continue
                     item = (st.st_size, e.path, st)
                     if len(files) < MAX_FILES:

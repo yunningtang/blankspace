@@ -1,40 +1,28 @@
-"""界面和后端之间唯一的接口。
+"""界面和后端之间唯一的接口。界面通过 main.Bridge（pywebview）或 devserver 调用；这里不依赖 pywebview，可以直接测试。
 
-界面（webui/）通过 pywebview 调用这里的方法；开发时也可以用 devserver.py 在浏览器里调用。
-这个类不依赖 pywebview，可以直接测试。
-
-规则：
-- 所有耗时的事（扫描、看文件夹、移到回收站）都在后台线程里做，界面用 state() 轮询进度。
-- 删除一律走 cleaner.preflight → 用户确认 → cleaner.execute。plan() 只读，execute() 才动文件。
-- 移动（整理、挪到别的盘、撤销）一律走 mover：plan_moves → 用户确认 → execute_moves，每一批都能撤销。
+原则：
+- 打开时什么都不扫。用户选了一个盘或文件夹、点了开始，才去读（或者从右键菜单带进来一个文件夹）。
+  看过的地方有快照，下次直接显示上次的结果，想更新再重新扫。
+- 扫描在后台、低优先级运行，可以暂停、取消；关窗口就停。
+- 只读的事（看、找重复、找命名问题）随时可以做；动文件的事（移到回收站、移动、改名、结束程序）
+  必须先在设置里打开“允许留白整理和清理文件”，并且每一次都要：只读预检 plan → 用户确认 → execute 逐项再查。
 - 返回给界面的都是能转成 JSON 的普通数据。
 """
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 import threading
 import time
 import uuid
-
 from pathlib import Path
 
-from . import cleanables, cleaner, dupes, inspect as insp, mover, recycle, space, tidy
+from . import cleanables, cleaner, dupes, inspect as insp, mover, naming, places, procs, recycle, tidy, tree, winshell
 from .cleaner import Entry
 from .oplog import OpLog
 from .prefs import Prefs
 
-KIND = {"user": "user", "app": "app", "system": "sys", "cache": "cache", "free": "free"}
-INFO = {
-    "programs": "留白不删程序文件，删了程序会打不开。想卸载不用的程序，请到 Windows 设置 → 应用 → 已安装的应用。",
-    "local": "程序自己的数据。里面能放心清的缓存，已经单独列在“可放心清理”里了；其余的留白不会动。",
-    "roaming": "程序的设置、插件和账号信息。删了，程序可能要重新登录、重新设置。留白不会动。",
-    "devtools": "开发工具下载的依赖和工具链。可以放心清的已经列在“可放心清理”里；其余的请用对应工具自己的清理命令。",
-    "bin": "回收站里的还能找回。确认都不要了，在 Windows 回收站里点“清空回收站”，空间才会真正空出来。留白不替你清空，因为清空了就找不回来。",
-}
-INSPECTABLE = {"downloads", "desktop", "wechat", "qq", "videos", "pictures", "documents", "projects",
-               "music", "onedrive"}
+LOCKED = "要先在设置里打开“允许留白整理和清理文件”。关着的时候，留白只看，不动任何文件。"
 
 
 def _under(path: str, folder: str) -> bool:
@@ -43,236 +31,229 @@ def _under(path: str, folder: str) -> bool:
 
 
 class Api:
-    def __init__(self, drive: str | None = None, log: OpLog | None = None, prefs: Prefs | None = None,
-                 defs=None, caches=None, home: str | None = None, move_targets: list[str] | None = None):
-        self.drive = drive or space.system_drive()
-        self.home = home or str(Path.home())
-        self._move_targets = move_targets               # 测试时指定“别的盘”
+    def __init__(self, log: OpLog | None = None, prefs: Prefs | None = None, home: str | None = None,
+                 snapshots: str | None = None, caches=None, move_targets: list[str] | None = None,
+                 start_path: str | None = None):
         self.log = log or OpLog()
         self.prefs = prefs or Prefs()
-        self._defs, self._caches = defs, caches        # 测试时可以换成假的
+        self.home = home or str(Path.home())
+        self._snaps = Path(snapshots) if snapshots else None
+        self._caches_defs = caches                 # 测试时可以换成假的
+        self._move_targets = move_targets
+        self.start_path = start_path               # 从资源管理器右键带进来的文件夹
         self._lock = threading.RLock()
         self._cancel = threading.Event()
+        self._running = threading.Event()
+        self._running.set()
         self._scan_thread: threading.Thread | None = None
         self._job_thread: threading.Thread | None = None
-        self.window = None                              # pywebview 的窗口，由启动器设置
-        self._maxed = False
-        self._reset()
-
-    # ------------------------------------------------------------ 状态
-    def _reset(self):
         self._version = 0
-        self._phase = ""
+        self._tree: tree.Tree | None = None
+        self._scan = {"running": False, "paused": False, "count": 0, "current": "", "root": ""}
         self._error = ""
-        self._report: space.SpaceReport | None = None
-        self._partial: list[space.Category] = []
         self._cleanables: list[cleanables.Cleanable] = []
-        self._inspections: dict[str, insp.Inspection] = {}
-        self._suggest_keys: list[str] = []
+        self._busy: dict[str, str] = {}
+        self._inspections: dict[str, insp.Inspection] = {}   # 文件夹 → 建议
+        self._dupes: list[dupes.DupeGroup] = []
+        self._tidy: list[tidy.Proposal] = []
+        self._renames: dict[str, naming.Rename] = {}
+        self._versions: list[naming.VersionGroup] = []
         self._plans: dict[str, tuple] = {}
-        self._dupes: list[dupes.DupeGroup] | None = None
-        self._tidy: dict[str, list[tidy.Proposal]] | None = None
         self._job: dict | None = None
-        self._bin = space.recycle_bin_size(self.drive)
-        try:
-            u = shutil.disk_usage(self.drive)
-            self._usage = (u.total, u.used, u.free)
-        except OSError:
-            self._usage = (0, 0, 0)
+        self._n = 0
 
     def _bump(self):
         self._version += 1
 
-    def state(self) -> dict:
+    # ================================================================ 开始
+    def start(self) -> dict:
+        """打开时调用。很快：只问系统有哪些盘、读上次看过的列表，不扫任何文件。"""
+        return {"consented": self.prefs.consented, "allow_changes": self.prefs.allow_changes,
+                "drives": places.drives(), "folders": places.folders(self.home),
+                "recent": tree.known_snapshots(self._snaps)[:6], "start_path": self.start_path,
+                "home": self.home}
+
+    def set_consent(self, allow_changes: bool) -> dict:
+        self.prefs.consented = True
+        self.prefs.allow_changes = bool(allow_changes)
+        self.prefs.save()
+        return {"allow_changes": self.prefs.allow_changes}
+
+    def set_allow_changes(self, on: bool) -> dict:
+        self.prefs.allow_changes = bool(on)
+        self.prefs.save()
         with self._lock:
-            total, used, free = self._usage
-            cats = self._report.categories if self._report else self._partial
-            safe_total = sum(c.size for c in self._cleanables)
-            blocks = []
-            for c in cats:
-                if c.size > 0:
-                    blocks.append(self._block(c))
-            for c in self._cleanables:
-                if c.size > 0:
-                    blocks.append({"key": "c:" + c.key, "name": c.name, "kind": "cache", "size": c.size,
-                                   "note": c.cache.note if c.cache else "", "paths": []})
-            if self._bin:
-                blocks.append({"key": "bin", "name": "回收站", "kind": "bin", "size": self._bin,
-                               "note": INFO["bin"], "paths": []})
-            if self._report:
-                for b in self._report.blocks(0):
-                    if b.kind == "system":
-                        blocks.append(self._block(b))
-            else:
-                rest = used - sum(b["size"] for b in blocks)
-                if rest > 0:
-                    blocks.append({"key": "pending", "name": "还在统计…", "kind": "sys", "size": rest,
-                                   "note": "", "paths": []})
-            suggest = []
-            for k in self._suggest_keys:
-                c = next((c for c in cats if c.key == k), None)
-                if c is None or c.size <= 0:
-                    continue
-                ins = self._inspections.get(k)
-                suggest.append({"key": k, "name": c.name, "size": c.size,
-                                "maybe": ins.maybe_size if ins else None})
-            return {
-                "version": self._version,
-                "drive": self.drive, "total": total, "used": used, "free": free, "bin": self._bin,
-                "scanning": self._scan_thread is not None and self._scan_thread.is_alive(),
-                "phase": self._phase, "error": self._error,
-                "blocks": blocks,
-                "cleanables": [{"key": c.key, "name": c.name, "size": c.size, "count": len(c.items),
-                                "default": c.default, "note": c.cache.note if c.cache else "",
-                                "group": c.cache.group if c.cache else ""}
-                               for c in self._cleanables if c.size > 0],
-                "safe_total": safe_total,
-                "suggest": suggest,
-                "job": dict(self._job) if self._job else None,
-                "organize": self._organize_summary(),
-                "drives": self.drives(),
-            }
+            self._bump()
+        return {"allow_changes": self.prefs.allow_changes}
 
-    def _organize_summary(self) -> list[dict]:
-        out = []
-        if self._dupes is None:
-            out.append({"key": "dupes", "name": "重复文件", "pending": True})
-        elif self._dupes:
-            out.append({"key": "dupes", "name": "重复文件", "count": len(self._dupes),
-                        "size": sum(g.wasted for g in self._dupes),
-                        "hint": f"{len(self._dupes)} 组一模一样的文件，每组留一份"})
-        for where, name in (("downloads", "整理下载"), ("desktop", "整理桌面")):
-            if self._tidy is None:
-                continue
-            ps = self._tidy.get(where) or []
-            if ps:
-                parts = [f"{p.title} {p.count} 个" for p in ps]
-                out.append({"key": f"tidy:{where}", "name": name, "count": sum(p.count for p in ps),
-                            "size": sum(p.size for p in ps), "hint": "，".join(parts)})
-        return out
-
-    @staticmethod
-    def _block(c: space.Category) -> dict:
-        return {"key": c.key, "name": c.name, "kind": KIND.get(c.kind, "sys"), "size": c.size,
-                "note": c.note or INFO.get(c.key, ""), "paths": list(c.paths)}
-
-    # ------------------------------------------------------------ 扫描
-    def scan(self) -> dict:
-        """开始（或重新开始）扫描。已经在扫就什么都不做。"""
+    # ================================================================ 扫描一个地方
+    def open_place(self, path: str, rescan: bool = False) -> dict:
+        """打开一个盘或文件夹。有上次的快照就先显示快照（不读硬盘）；rescan=True 才重新扫。"""
+        path = os.path.abspath(path)
+        if not os.path.isdir(path):
+            return {"ok": False, "why": "找不到这个文件夹"}
         with self._lock:
             if self._scan_thread and self._scan_thread.is_alive():
-                return {"started": False}
-            if self._job and self._job.get("running"):
-                return {"started": False, "why": "正在移到回收站，完成后再扫描"}
-            self._cancel.clear()
-            self._reset()
-            self._phase = "正在找可以放心清理的缓存…"
-            self._scan_thread = threading.Thread(target=self._scan_work, daemon=True)
-            self._scan_thread.start()
-            return {"started": True}
-
-    def _scan_work(self):
-        try:
-            found = cleanables.find_all(self._caches, cancel=self._cancel)
-            with self._lock:
-                self._cleanables = found
-                self._phase = "正在统计空间…"
-                self._bump()
-            subtract = [(p, s) for c in found for p, s in c.items]
-
-            def on_cat(c):
-                with self._lock:
-                    self._partial.append(c)
-                    self._phase = f"正在统计：{c.name}"
+                return {"ok": False, "why": "正在扫描别的地方，先等它完成或者取消"}
+            self._error = ""
+            self._inspections.clear()
+            self._dupes, self._tidy, self._renames, self._versions = [], [], {}, []
+            if not rescan:
+                snap = tree.load(path, self._snaps)
+                if snap is not None:
+                    self._tree = snap
                     self._bump()
-            rep = space.measure(self.drive, self._cancel, on_category=on_cat, subtract=subtract,
-                                defs=self._defs)
+                    return {"ok": True, "loaded": True, "scanning": False}
+            self._tree = None
+            self._cancel.clear()
+            self._running.set()
+            self._scan = {"running": True, "paused": False, "count": 0, "current": "", "root": path}
+            self._scan_thread = threading.Thread(target=self._scan_work, args=(path,), daemon=True)
+            self._scan_thread.start()
+            self._bump()
+            return {"ok": True, "loaded": False, "scanning": True}
+
+    def _scan_work(self, path: str):
+        def prog(count, current):
             with self._lock:
-                self._report = rep
-                self._usage = (rep.total, rep.used, rep.free)
-                self._bin = rep.recycle_bin
-                users = sorted((c for c in rep.categories if c.key in INSPECTABLE and c.size > 0),
-                               key=lambda c: -c.size)
-                self._suggest_keys = [c.key for c in users[:3]]
-                self._phase = "正在看最大的几块里有什么…"
+                self._scan["count"], self._scan["current"] = count, current
                 self._bump()
-            # 先看最大的三块，算出“可能不再需要”的大小，给首页的建议用
-            for k in list(self._suggest_keys):
-                if self._cancel.is_set():
-                    break
-                self._inspect_now(k)
-            self._find_organize()
+        try:
+            t = tree.scan(path, self._cancel, self._running, prog)
+            if t.complete:
+                tree.save(t, self._snaps)
             with self._lock:
-                self._phase = ""
-                self._bump()
+                self._tree = t
         except Exception as e:  # noqa: BLE001 - 扫描出错要告诉用户，不能悄悄停住
             with self._lock:
                 self._error = f"扫描出错：{e}"
-                self._phase = ""
-                self._bump()
-
-    def _find_organize(self):
-        """找重复文件、整理建议。在扫描之后做，也在移动之后重新做。"""
         with self._lock:
-            self._phase = "正在找重复文件…"
-            self._bump()
-        groups = dupes.find(dupes.default_roots(self.home), cancel=self._cancel)
-        h = Path(self.home)
-        props = {w: tidy.propose(w, str(h / d), str(h / "Pictures"), str(h / "Videos"))
-                 for w, d in (("downloads", "Downloads"), ("desktop", "Desktop")) if (h / d).is_dir()}
-        with self._lock:
-            self._dupes, self._tidy = groups, props
+            self._scan["running"] = False
+            self._scan["paused"] = False
             self._bump()
 
-    def cancel(self) -> dict:
-        self._cancel.set()
+    def scan_control(self, action: str) -> dict:
+        """暂停 / 继续 / 取消正在进行的扫描。"""
+        if action == "pause":
+            self._running.clear()
+        elif action == "resume":
+            self._running.set()
+        elif action == "cancel":
+            self._cancel.set()
+            self._running.set()
+        with self._lock:
+            self._scan["paused"] = not self._running.is_set()
+            self._bump()
         return {"ok": True}
 
-    # ------------------------------------------------------------ 看看里面
-    def _category(self, key: str) -> space.Category | None:
-        cats = self._report.categories if self._report else self._partial
-        return next((c for c in cats if c.key == key), None)
+    def cancel(self) -> dict:
+        return self.scan_control("cancel")
 
-    def _inspect_now(self, key: str) -> insp.Inspection | None:
-        c = self._category(key)
-        if c is None:
-            return None
-        skip = frozenset(p for cl in self._cleanables for p, _ in cl.items)
-        ins = insp.inspect(key, c.paths, self._cancel, keep=frozenset(self.prefs.keep), skip=skip)
+    def close_place(self) -> dict:
         with self._lock:
-            self._inspections[key] = ins
+            self._tree = None
             self._bump()
-        return ins
+        return {"ok": True}
 
-    def inspect(self, key: str) -> dict:
-        """一块墨的详情。你的文件给出建议；程序、系统、回收站只给说明。会花几秒，界面要显示“正在看”。"""
-        if key.startswith("c:"):
-            c = next((c for c in self._cleanables if "c:" + c.key == key), None)
-            if not c:
-                return {"key": key, "missing": True}
-            return {"key": key, "name": c.name, "size": c.size, "kind": "cache",
-                    "info": c.cache.note if c.cache else "", "groups": [], "paths": []}
-        if key == "bin":
-            return {"key": key, "name": "回收站", "size": self._bin, "kind": "bin", "info": INFO["bin"],
-                    "groups": [], "paths": []}
-        if key == "dupes":
-            return self._dupes_detail()
-        if key.startswith("tidy:"):
-            return self._tidy_detail(key.split(":", 1)[1])
-        c = self._category(key)
-        if c is None:
-            sys_block = next((b for b in (self._report.blocks(0) if self._report else []) if b.key == key), None)
-            if sys_block:
-                return {"key": key, "name": sys_block.name, "size": sys_block.size, "kind": "sys",
-                        "info": sys_block.note, "groups": [], "paths": []}
-            return {"key": key, "missing": True}
-        if key not in INSPECTABLE:
-            return {"key": key, "name": c.name, "size": c.size, "kind": KIND.get(c.kind, "sys"),
-                    "info": c.note or INFO.get(key, ""), "groups": [], "paths": c.paths}
-        ins = self._inspections.get(key) or self._inspect_now(key)
-        return self._detail(c, ins)
+    # ================================================================ 状态（界面轮询）
+    def state(self) -> dict:
+        with self._lock:
+            t = self._tree
+            place = None
+            if t is not None:
+                rn = t.node(t.root)
+                place = {"root": t.root, "name": rn.name if rn else t.root, "size": rn.size if rn else 0,
+                         "files": rn.files if rn else 0, "at": t.scanned_at, "seconds": round(t.seconds, 1),
+                         "complete": t.complete, "total": t.total, "used": t.used, "free": t.free,
+                         "drive": tree.is_drive_root(t.root)}
+            return {"version": self._version, "scan": dict(self._scan), "place": place, "error": self._error,
+                    "job": dict(self._job) if self._job else None, "allow_changes": self.prefs.allow_changes,
+                    "bin": recycle.bin_used(self._tree.root) if (self._tree and os.name == "nt") else 0}
 
-    def _detail(self, c: space.Category, ins: insp.Inspection) -> dict:
+    # ================================================================ 往里走
+    def view(self, path: str) -> dict:
+        """某个文件夹里的块。直接用扫描得到的树，瞬间返回。"""
+        t = self._tree
+        if t is None:
+            return {"ok": False}
+        n = t.node(path)
+        if n is None:
+            return {"ok": False, "why": "这个文件夹不在这次扫描的范围里"}
+        tone = insp.tone_for(n.path, self.home)
+        tools = ["inspect", "dupes", "rename", "versions"]
+        if any(tree.key(n.path) == tree.key(os.path.join(self.home, d)) for d in ("Downloads", "Desktop")):
+            tools.insert(1, "tidy")        # 整理只对“下载”和“桌面”本身有意义
+        return {"ok": True, "path": n.path, "name": n.name, "size": n.size, "files": n.files,
+                "skipped": n.skipped, "crumbs": tree.crumbs(t, n.path), "items": tree.view(t, n.path),
+                "tone": tone, "tools": tools, "is_root": tree.key(n.path) == tree.key(t.root)}
+
+    # ================================================================ 工具（都是只读的分析）
+    def tool(self, kind: str, path: str) -> dict:
+        """在某个文件夹里做一次分析。可能要几秒到几分钟（找重复文件要读文件内容）。"""
+        if not os.path.isdir(path):
+            return {"ok": False, "why": "找不到这个文件夹"}
+        self._cancel.clear()
+        if kind == "inspect":
+            return self._tool_inspect(path)
+        if kind == "dupes":
+            groups = dupes.find([(os.path.basename(path) or path, path)], cancel=self._cancel)
+            with self._lock:
+                self._dupes = groups
+            return {"ok": True, "kind": "dupes", "path": path, "size": sum(g.wasted for g in groups),
+                    "dupes": [{"id": g.id, "size": g.size, "name": os.path.basename(g.keeper),
+                               "files": [{"id": f.id, "path": f.path, "name": os.path.basename(f.path),
+                                          "where": f.where, "keeper": f.path == g.keeper} for f in g.files]}
+                              for g in groups]}
+        if kind == "tidy":
+            h = Path(self.home)
+            where = "downloads" if _under(path, str(h / "Downloads")) else "desktop"
+            props = tidy.propose(where, path, str(h / "Pictures"), str(h / "Videos"))
+            with self._lock:
+                self._tidy = props
+            return {"ok": True, "kind": "tidy", "path": path,
+                    "proposals": [{"id": p.id, "title": p.title, "how": p.how, "count": p.count, "size": p.size,
+                                   "samples": p.samples} for p in props]}
+        if kind == "rename":
+            rs = naming.propose_renames(path)
+            with self._lock:
+                self._renames = {f"rn:{i}": r for i, r in enumerate(rs)}
+            how = {"exif": "照片里记录的拍摄时间", "name": "文件名里的日期", "mtime": "文件的修改时间（不太准）"}
+            return {"ok": True, "kind": "rename", "path": path,
+                    "renames": [{"id": k, "from": os.path.basename(r.src), "to": os.path.basename(r.dst),
+                                 "where": os.path.relpath(os.path.dirname(r.src), path) if os.path.dirname(r.src) != path else "",
+                                 "when": r.when, "how": how[r.when]} for k, r in self._renames.items()]}
+        if kind == "versions":
+            gs = naming.propose_versions(path)
+            with self._lock:
+                self._versions = gs
+            return {"ok": True, "kind": "versions", "path": path,
+                    "groups": [{"id": g.id, "title": g.title, "keep": os.path.basename(g.keep),
+                                "older": [{"name": os.path.basename(p), "mtime": g.mtimes[p], "size": g.sizes[p]}
+                                          for p in g.older]} for g in gs]}
+        return {"ok": False, "why": "不认识的工具"}
+
+    def _tool_inspect(self, path: str) -> dict:
+        skip = frozenset(p for cl in self._cleanables for p, _ in cl.items)
+        self._n += 1
+        ins = insp.inspect(f"i{self._n}", [path], self._cancel, keep=frozenset(self.prefs.keep), skip=skip,
+                           tone=insp.tone_for(path, self.home), min_file=self._min_file(path))
+        with self._lock:
+            self._inspections[os.path.normcase(path)] = ins
+        return self._inspect_payload(path, ins)
+
+    def _min_file(self, path: str) -> int:
+        """逐个看的文件下限：这个地方大小的 1%，在 1 M 到 50 M 之间。"""
+        size = 0
+        with self._lock:
+            t = self._tree
+        if t is not None:
+            node = t.node(path)
+            size = node.size if node else 0
+        if not size:
+            return insp.MIN_FILE
+        return max(1024 * 1024, min(insp.MIN_FILE, size // 100))
+
+    def _inspect_payload(self, path, ins) -> dict:
         titles = {"maybe": "可能不再需要", "mine": "你的文件", "keep": "最近还在用", "lock": "留白不会动"}
         groups = []
         for lvl in ("maybe", "mine", "keep", "lock"):
@@ -281,59 +262,8 @@ class Api:
                 groups.append({"lvl": lvl, "title": titles[lvl], "size": sum(s.size for s in items),
                                "items": [{"id": s.id, "name": s.name, "path": s.path, "size": s.size,
                                           "why": s.why, "then": s.then, "dir": s.is_dir} for s in items]})
-        return {"key": c.key, "name": c.name, "size": c.size, "kind": KIND.get(c.kind, "user"),
-                "paths": c.paths, "maybe": ins.maybe_size, "groups": groups,
-                "rest": {"count": ins.rest_count, "size": ins.rest_size}, "info": ""}
-
-    def _dupes_detail(self) -> dict:
-        gs = self._dupes or []
-        return {"key": "dupes", "name": "重复文件", "kind": "dupes", "size": sum(g.wasted for g in gs),
-                "groups": [], "info": "", "paths": [],
-                "dupes": [{"id": g.id, "size": g.size, "name": os.path.basename(g.keeper),
-                           "files": [{"id": f.id, "path": f.path, "name": os.path.basename(f.path), "where": f.where,
-                                      "keeper": f.path == g.keeper} for f in g.files]} for g in gs]}
-
-    def _tidy_detail(self, where: str) -> dict:
-        ps = (self._tidy or {}).get(where) or []
-        name = "整理下载" if where == "downloads" else "整理桌面"
-        return {"key": f"tidy:{where}", "name": name, "kind": "tidy", "size": sum(p.size for p in ps),
-                "groups": [], "info": "", "paths": [str(Path(self.home) / ("Downloads" if where == "downloads" else "Desktop"))],
-                "proposals": [{"id": p.id, "title": p.title, "how": p.how, "count": p.count, "size": p.size,
-                               "samples": p.samples} for p in ps]}
-
-    def set_keeper(self, group_id: str, file_id: str) -> dict:
-        """重复文件：改留另一份。"""
-        for g in self._dupes or []:
-            if g.id == group_id:
-                f = next((f for f in g.files if f.id == file_id), None)
-                if f:
-                    g.keeper = f.path
-                    with self._lock:
-                        self._bump()
-                    return {"ok": True}
-        return {"ok": False}
-
-    def drives(self) -> list[dict]:
-        """可以“挪过去”的别的盘：本地磁盘或移动硬盘，不含系统盘和网络盘。"""
-        roots = self._move_targets
-        if roots is None:
-            roots = []
-            if os.name == "nt":
-                sysd = os.path.splitdrive(self.drive)[0].upper()
-                for letter in "DEFGHIJKLMNOPQRSTUVWXYZ":
-                    r = f"{letter}:\\"
-                    if letter + ":" != sysd and os.path.exists(r) and recycle.drive_type(r) in (2, 3):
-                        roots.append(r)
-        out = []
-        for r in roots:
-            try:
-                free = shutil.disk_usage(r).free
-            except OSError:
-                continue
-            letter = os.path.splitdrive(r)[0].rstrip(":")
-            out.append({"root": r, "label": f"{letter} 盘" if letter else os.path.basename(r.rstrip(os.sep)) or r,
-                        "free": free, "removable": os.name == "nt" and recycle.drive_type(r) == 2})
-        return sorted(out, key=lambda d: -d["free"])
+        return {"ok": True, "kind": "inspect", "path": path, "maybe": ins.maybe_size, "groups": groups,
+                "rest": {"count": ins.rest_count, "size": ins.rest_size}}
 
     def set_keep(self, item_id: str, on: bool = True) -> dict:
         s = self._find_suggestion(item_id)
@@ -342,9 +272,16 @@ class Api:
         self.prefs.set_keep(s.path, on)
         if on:
             s.lvl, s.why, s.then = "keep", "你说过留着。", ""
-        with self._lock:
-            self._bump()
         return {"ok": True}
+
+    def set_keeper(self, group_id: str, file_id: str) -> dict:
+        for g in self._dupes:
+            if g.id == group_id:
+                f = next((f for f in g.files if f.id == file_id), None)
+                if f:
+                    g.keeper = f.path
+                    return {"ok": True}
+        return {"ok": False}
 
     def _find_suggestion(self, item_id: str):
         for ins in self._inspections.values():
@@ -353,18 +290,54 @@ class Api:
                     return s
         return None
 
-    # ------------------------------------------------------------ 移到回收站
+    # ================================================================ 系统和软件缓存（按需）
+    def caches(self) -> dict:
+        found = cleanables.find_all(self._caches_defs, cancel=self._cancel)
+        busy = procs.busy_caches([c.key for c in found])
+        with self._lock:
+            self._cleanables, self._busy = found, busy
+        return {"ok": True, "items": [{"key": c.key, "name": c.name, "size": c.size, "count": len(c.items),
+                                       "default": c.default and c.key not in busy, "note": c.cache.note if c.cache else "",
+                                       "cost": c.cache.cost if c.cache else "", "group": c.cache.group if c.cache else "",
+                                       "busy": busy.get(c.key, "")} for c in found if c.size > 0]}
+
+    # ================================================================ 正在运行的程序
+    def processes(self) -> dict:
+        return procs.snapshot()
+
+    def end_processes(self, pids: list[int]) -> dict:
+        if not self.prefs.allow_changes:
+            return {"ok": False, "why": LOCKED}
+        return {"ok": True, **procs.end([int(p) for p in pids])}
+
+    # ================================================================ 预检（只读）
+    def drives(self, exclude: str | None = None) -> list[dict]:
+        """可以“挪过去”的别的盘。"""
+        if self._move_targets is not None:
+            ds = [{"path": r, "name": os.path.basename(r.rstrip(os.sep)) or r, "free": 0, "removable": False}
+                  for r in self._move_targets]
+        else:
+            ds = [d for d in places.drives() if not d["system"]]
+        if exclude:
+            ds = [d for d in ds if not _under(exclude, d["path"])]
+        return ds
+
     def plan(self, kind: str, ids: list[str], target: str | None = None) -> dict:
         """只读预检，什么都不动。
-        kind：caches 缓存 / files 建议里的文件 / dupes 重复文件的副本（都是移到回收站）；
-              move 把你的文件挪到别的盘（target 是盘的根目录）/ tidy 整理建议（都是移动，可撤销）。"""
+        移到回收站：caches 缓存 / files 建议里的文件 / dupes 重复的副本 / paths 右键选的文件或文件夹；
+        移动（可撤销）：move 挪到别的盘（ids 是路径或建议 id）/ tidy 整理 / rename 改名 / versions 收起旧版本。"""
+        if not self.prefs.allow_changes:
+            return {"error": LOCKED}
         then: list[str] = []
         if kind == "caches":
             sel = [c for c in self._cleanables if c.key in set(ids)]
+            busy = [c for c in sel if c.key in self._busy]
+            sel = [c for c in sel if c.key not in self._busy]
             pl = cleanables.plan(sel)
+            pl.refused = [(c.name, f"{self._busy[c.key]}开着，现在清不掉。先关掉它再清") for c in busy] + pl.refused
+            then = sorted({c.cache.cost for c in sel if c.cache and c.cache.cost})
         elif kind == "files":
             sugs = [s for s in (self._find_suggestion(i) for i in ids) if s and s.lvl == "maybe"]
-            # 第二道保险：一组重复文件不能全部移走，至少留一份
             chosen = {s.path for s in sugs}
             twins = [(s.path, "它的另一份也在这次要移走的里面，至少留一份") for s in sugs if s.twin_of in chosen]
             sugs = [s for s in sugs if s.twin_of not in chosen]
@@ -372,9 +345,8 @@ class Api:
             pl.refused = twins + pl.refused
             then = sorted({s.then for s in sugs if s.then})
         elif kind == "dupes":
-            want, refused = set(ids), []
-            entries = []
-            for g in self._dupes or []:
+            want, refused, entries = set(ids), [], []
+            for g in self._dupes:
                 for f in g.files:
                     if f.id not in want:
                         continue
@@ -387,56 +359,90 @@ class Api:
             pl = cleaner.preflight(entries)
             pl.refused = refused + pl.refused
             then = ["每一组都留下一份，内容一模一样。"]
-        elif kind in ("move", "tidy"):
+        elif kind == "paths":
+            entries = [Entry(p, *self._scanned(p)) for p in ids]
+            pl = cleaner.preflight(entries)
+        elif kind in ("move", "tidy", "rename", "versions"):
             return self._plan_moves(kind, ids, target)
         else:
             return {"error": "不认识的操作"}
+        return self._keep_plan("recycle", pl, then)
+
+    def _scanned(self, path: str) -> tuple[int, tuple | None]:
+        """扫描时看到的 (大小, 指纹)。文件用扫描时的大小和修改时间做指纹：之后变了就不动它。"""
+        t = self._tree
+        if t is None:
+            return 0, None
+        n = t.node(path)
+        if n is not None:
+            return n.size, None                     # 文件夹：不用指纹（里面随时可能变）
+        parent = t.node(os.path.dirname(path))
+        if parent:
+            for name, size, mtime in parent.top:
+                if os.path.normcase(name) == os.path.normcase(os.path.basename(path)):
+                    return size, (size, mtime)
+        return 0, None
+
+    def _keep_plan(self, typ, pl, then, label="") -> dict:
         pid = uuid.uuid4().hex[:12]
         with self._lock:
-            self._plans = {pid: ("recycle", pl)}           # 只保留最新的一份，旧的确认作废
-        return {"id": pid, "type": "recycle", "count": len(pl.go), "total": pl.total,
+            self._plans = {pid: (typ, pl)}           # 只保留最新的一份，旧的确认作废
+        return {"id": pid, "type": typ, "label": label, "count": len(pl.go), "total": pl.total,
                 "refused": [[p, why] for p, why in pl.refused[:20]], "refused_count": len(pl.refused),
                 "warnings": pl.warnings, "then": then}
 
     def _plan_moves(self, kind: str, ids: list[str], target: str | None) -> dict:
         pairs, sizes, stamps, then = [], {}, {}, []
         if kind == "tidy":
-            props = [p for ps in (self._tidy or {}).values() for p in ps if p.id in set(ids)]
-            for p in props:
+            for p in (p for p in self._tidy if p.id in set(ids)):
                 pairs += p.moves
                 sizes.update(p.sizes)
                 stamps.update(p.stamps)
                 then.append(f"{p.title}：{p.how}。")
             label = "整理"
+        elif kind == "rename":
+            for i in ids:
+                r = self._renames.get(i)
+                if r:
+                    pairs.append((r.src, r.dst))
+                    stamps[r.src] = r.stamp
+            then.append("只改名字，不改内容，不换文件夹。同一秒拍的会在后面加 (2)。")
+            label = "改名"
+        elif kind == "versions":
+            for g in (g for g in self._versions if g.id in set(ids)):
+                pairs += naming.version_moves(g)
+                sizes.update(g.sizes)
+            then.append("每组最新的那份留在原处，其余的收进同一个文件夹里的“旧版本”。")
+            label = "收起旧版本"
         else:
-            drives = {d["root"]: d for d in self.drives()}
-            if target not in drives:
+            ds = {d["path"]: d for d in self.drives()}
+            if target not in ds:
                 return {"error": "找不到要挪去的盘"}
             base = os.path.join(target, "留白挪出")
             for i in ids:
                 s = self._find_suggestion(i)
-                if not s or s.lvl not in ("mine", "maybe"):
+                src = s.path if s else i
+                if not os.path.lexists(src):
                     continue
-                cat = next((c for c in (self._report.categories if self._report else [])
-                            if any(_under(s.path, p) for p in c.paths)), None)
-                root = next((p for p in (cat.paths if cat else []) if _under(s.path, p)), os.path.dirname(s.path))
-                rel = os.path.relpath(s.path, root)
-                pairs.append((s.path, os.path.join(base, cat.name if cat else "其他", rel)))
-                sizes[s.path] = s.size
-                stamps[s.path] = s.stamp
-            then.append(f"挪到 {drives[target]['label']}的“留白挪出”文件夹，按原来的分类放好。")
-            if drives[target].get("removable"):
+                # 保留从主目录（或盘根）往下的路径，挪回来时一目了然
+                anchor = self.home if _under(src, self.home) else os.path.splitdrive(src)[0] + os.sep
+                rel = os.path.relpath(src, anchor)
+                pairs.append((src, os.path.join(base, rel)))
+                if s:
+                    sizes[src], stamps[src] = s.size, s.stamp
+                elif self._tree and self._tree.node(src):
+                    sizes[src] = self._tree.node(src).size
+            then.append(f"挪到 {ds[target]['name']}的“留白挪出”文件夹，保留原来的文件夹结构。")
+            if ds[target].get("removable"):
                 then.append("这是移动硬盘，拔掉以后就看不到这些文件了。")
             label = "挪走"
         pl = mover.plan_moves(pairs, sizes, stamps, label="move")
-        pid = uuid.uuid4().hex[:12]
-        with self._lock:
-            self._plans = {pid: ("move", pl)}
-        return {"id": pid, "type": "move", "label": label, "count": len(pl.go), "total": pl.total,
-                "refused": [[p, why] for p, why in pl.refused[:20]], "refused_count": len(pl.refused),
-                "warnings": pl.warnings, "then": then}
+        return self._keep_plan("move", pl, then, label)
 
+    # ================================================================ 执行（动文件）
     def execute(self, plan_id: str) -> dict:
+        if not self.prefs.allow_changes:
+            return {"started": False, "why": LOCKED}
         with self._lock:
             item = self._plans.pop(plan_id, None)
             if item is None:
@@ -445,17 +451,18 @@ class Api:
                 return {"started": False, "why": "上一批还没做完"}
             if self._scan_thread and self._scan_thread.is_alive():
                 return {"started": False, "why": "正在扫描，扫描完再做"}
-            kind, pl = item
-            self._job = {"kind": "recycle" if kind == "recycle" else "move", "running": True, "index": 0,
-                         "count": len(pl.go), "total": pl.total, "moved": 0, "trashed": 0, "failed": [],
-                         "done": False, "batch": ""}
-            work = self._job_work if kind == "recycle" else self._move_work
+            typ, pl = item
+            self._job = {"kind": typ, "running": True, "index": 0, "count": len(pl.go), "total": pl.total,
+                         "moved": 0, "trashed": 0, "failed": [], "done": False, "batch": ""}
+            work = self._recycle_work if typ == "recycle" else self._move_work
             self._job_thread = threading.Thread(target=work, args=(pl,), daemon=True)
             self._job_thread.start()
             return {"started": True}
 
     def undo(self, batch: str) -> dict:
         """把一批移动原样挪回去。原处已经有新文件的那一项不挪，不会覆盖任何东西。"""
+        if not self.prefs.allow_changes:
+            return {"started": False, "why": LOCKED}
         with self._lock:
             if self._job and self._job.get("running"):
                 return {"started": False, "why": "上一批还没做完"}
@@ -473,6 +480,23 @@ class Api:
             self._job["index"] = i
             self._bump()
 
+    def _recycle_work(self, pl: cleaner.Plan):
+        rep = cleaner.execute(pl, log=self.log, on_item=self._on_item)
+        moved = set(rep.moved)
+        self._refresh([p for p in rep.moved])
+        with self._lock:
+            for c in self._cleanables:
+                c.items = [(p, s) for p, s in c.items if p not in moved]
+            for ins in self._inspections.values():
+                ins.items = [s for s in ins.items if s.path not in moved]
+            for g in self._dupes:
+                g.files = [f for f in g.files if f.path not in moved]
+            self._dupes = [g for g in self._dupes if len(g.files) > 1]
+            self._job.update(running=False, done=True, moved=len(rep.moved), trashed=rep.trashed,
+                             failed=[[p, why] for p, why in (pl.refused + rep.failed)][:50],
+                             log_unsaved=len(self.log.unsaved))
+            self._bump()
+
     def _move_work(self, pl):
         rep = mover.execute_moves(pl, self.log, on_item=self._on_item)
         self._after_moves(rep, pl)
@@ -482,65 +506,34 @@ class Api:
         self._after_moves(rep, pl)
 
     def _after_moves(self, rep: mover.MoveReport, pl: mover.MovePlan):
-        """移动之后：挪出系统盘的，类别变小；挪回来的（撤销），类别变大。受影响的类别重新看一遍。"""
-        sizes = {m.src: m.size for m in pl.go}
-        touched: set[str] = set()
+        gone = {src for src, _ in rep.moved}
+        self._refresh([p for pair in rep.moved for p in pair])
         with self._lock:
-            cats = self._report.categories if self._report else []
-            def owner(path):
-                return next((c for c in cats if any(_under(path, p) for p in c.paths)), None)
-            for src, dst in rep.moved:
-                sz = sizes.get(src, 0)
-                src_on, dst_on = _under(src, self.drive), _under(dst, self.drive)
-                for path, sign in ((src, -1), (dst, +1)):
-                    c = owner(path)
-                    if c is not None:
-                        touched.add(c.key)
-                        if src_on != dst_on and _under(path, self.drive):
-                            c.size = max(0, c.size + sign * sz)
-            try:
-                u = shutil.disk_usage(self.drive)
-                self._usage = (u.total, u.used, u.free)
-            except OSError:
-                pass
-        for k in touched & INSPECTABLE:
-            if k in self._inspections:
-                self._inspect_now(k)
-        self._find_organize()
-        with self._lock:
-            self._phase = ""
+            for ins in self._inspections.values():
+                ins.items = [s for s in ins.items if s.path not in gone]
             self._job.update(running=False, done=True, moved=len(rep.moved), trashed=rep.size,
                              failed=[[p, why] for p, why in (list(pl.refused) + rep.failed)][:50],
                              batch=rep.batch, log_unsaved=len(self.log.unsaved),
                              undoable=bool(rep.moved) and self._job.get("kind") != "undo")
             self._bump()
 
-    def _job_work(self, pl: cleaner.Plan):
-        rep = cleaner.execute(pl, log=self.log, on_item=self._on_item)
-        moved = set(rep.moved)
-        with self._lock:
-            # 移走的从缓存和建议里去掉；它们现在在回收站里，所以回收站变大，可用空间不变
-            for c in self._cleanables:
-                c.items = [(p, s) for p, s in c.items if p not in moved]
-            for ins in self._inspections.values():
-                ins.items = [s for s in ins.items if s.path not in moved]
-            for cat in (self._report.categories if self._report else []):
-                cat.size = max(0, cat.size - sum(e.size for e in pl.go if e.path in moved
-                                                 and any(_under(e.path, p) for p in cat.paths)))
-            self._bin = space.recycle_bin_size(self.drive) or self._bin + rep.trashed
+    def _refresh(self, paths: list[str]):
+        """动过的文件所在的文件夹，在树里重新读一下（只读这几个文件夹，不整盘重扫）。"""
+        t = self._tree
+        if t is None:
+            return
+        folders = sorted({os.path.dirname(p) for p in paths if _under(p, t.root)}, key=len)
+        done: list[str] = []
+        for f in folders:
+            if any(_under(f, d) for d in done):
+                continue
             try:
-                u = shutil.disk_usage(self.drive)
-                self._usage = (u.total, u.used, u.free)
+                tree.regraft(t, f)
             except OSError:
-                pass
-            self._job.update(running=False, done=True, moved=len(rep.moved), trashed=rep.trashed,
-                             failed=[[p, why] for p, why in (pl.refused + rep.failed)][:50],
-                             log_unsaved=len(self.log.unsaved))
-            if self._dupes:   # 移走的副本从重复文件里去掉
-                for g in self._dupes:
-                    g.files = [f for f in g.files if f.path not in moved]
-                self._dupes = [g for g in self._dupes if len(g.files) > 1]
-            self._bump()
+                continue
+            done.append(f)
+        if done and t.complete:
+            tree.save(t, self._snaps)
 
     def clear_job(self) -> dict:
         with self._lock:
@@ -564,37 +557,25 @@ class Api:
             x["undoable"] = mover.undoable(self.log, x["batch"])
         return {"records": list(reversed(recs[-limit:])), "batches": recent}
 
-    # ------------------------------------------------------------ 打开系统窗口（不改任何东西）
+    # ================================================================ 打开系统窗口（只是打开，不改任何东西）
+    def reveal(self, path: str) -> dict:
+        return {"ok": winshell.reveal(path)}
+
+    def open_folder(self, path: str) -> dict:
+        return {"ok": winshell.open_folder(path)}
+
+    def open_file(self, path: str) -> dict:
+        return {"ok": winshell.open_file(path)}
+
     def open_recycle_bin(self) -> dict:
         if os.name == "nt":
             subprocess.Popen(["explorer", "shell:RecycleBinFolder"])
-        return {"ok": os.name == "nt"}
-
-    def reveal(self, path: str) -> dict:
-        if os.name == "nt" and os.path.exists(path):
-            subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])
         return {"ok": os.name == "nt"}
 
     def open_storage_settings(self) -> dict:
         if os.name == "nt":
             os.startfile("ms-settings:storagesense")  # noqa: S606
         return {"ok": os.name == "nt"}
-
-    # ------------------------------------------------------------ 窗口
-    def win_minimize(self):
-        if self.window:
-            self.window.minimize()
-
-    def win_toggle_max(self):
-        if self.window:
-            (self.window.restore if self._maxed else self.window.maximize)()
-            self._maxed = not self._maxed
-        return {"maxed": self._maxed}
-
-    def win_close(self):
-        self._cancel.set()
-        if self.window:
-            self.window.destroy()
 
     def wait_idle(self, timeout: float = 30) -> bool:
         """测试用：等扫描和清理都结束。"""
@@ -603,3 +584,6 @@ class Api:
             if t is not None:
                 t.join(max(0, end - time.monotonic()))
         return not any(t is not None and t.is_alive() for t in (self._scan_thread, self._job_thread))
+
+
+

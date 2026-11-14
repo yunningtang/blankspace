@@ -73,6 +73,16 @@ jobs:
       - name: 便携版（不用安装）
         shell: pwsh
         run: Compress-Archive -Path dist\Liubai\* -DestinationPath "dist\Liubai-${{ steps.v.outputs.version }}-portable.zip"
+      - name: 校验值（SHA256）
+        shell: pwsh
+        run: |
+          $lines = @("", "## 校验值（SHA256）", "", "下载后可以在 PowerShell 里用 ``Get-FileHash 文件名`` 核对。", "", "``````")
+          Get-ChildItem dist\Liubai-Setup-*.exe, dist\Liubai-*-portable.zip | ForEach-Object {
+            $lines += "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash)  $($_.Name)"
+          }
+          $lines += "``````"
+          Add-Content -Path packaging\release-notes.md -Value $lines -Encoding utf8
+          Get-Content packaging\release-notes.md
       - uses: actions/upload-artifact@v4
         with:
           name: liubai-windows-${{ steps.v.outputs.version }}

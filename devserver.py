@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import sys
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -17,8 +18,12 @@ from core.api import Api
 
 WEB = Path(__file__).resolve().parent / "webui"
 api = Api()
-ALLOWED = {"state", "scan", "cancel", "inspect", "set_keep", "set_keeper", "plan", "execute", "undo", "clear_job",
-           "history", "open_recycle_bin", "reveal", "open_storage_settings", "win_minimize", "win_toggle_max", "win_close"}
+# 本机其他网页也能访问 127.0.0.1，所以每次启动生成一个口令：只有带着口令的请求才会被执行。
+TOKEN = secrets.token_urlsafe(16)
+ALLOWED = {"start", "set_consent", "set_allow_changes", "open_place", "scan_control", "close_place", "cancel",
+           "state", "view", "tool", "caches", "processes", "drives", "history", "set_keep", "set_keeper", "plan",
+           "execute", "undo", "clear_job", "end_processes", "reveal", "open_folder", "open_file",
+           "open_recycle_bin", "open_storage_settings"}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -32,6 +37,10 @@ class Handler(SimpleHTTPRequestHandler):
         name = self.path.rsplit("/", 1)[-1]
         if not self.path.startswith("/api/") or name not in ALLOWED:
             self.send_error(404)
+            return
+        host = (self.headers.get("Host") or "").split(":")[0]
+        if host not in ("127.0.0.1", "localhost") or self.headers.get("X-Liubai-Token") != TOKEN:
+            self.send_error(403)
             return
         n = int(self.headers.get("Content-Length") or 0)
         args = json.loads(self.rfile.read(n) or b"[]")
@@ -50,5 +59,5 @@ class Handler(SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
-    print(f"http://127.0.0.1:{port}  (Ctrl+C 退出)")
+    print(f"http://127.0.0.1:{port}/?token={TOKEN}  (Ctrl+C 退出)")
     ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
