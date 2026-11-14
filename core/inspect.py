@@ -146,6 +146,9 @@ def inspect(key: str, paths: list[str], cancel: threading.Event | None = None,
     skip 是已经在“可放心清理”里的路径（不重复建议，也不重复计算）。"""
     t0 = time.monotonic()
     now = now or time.time()
+    # Windows 路径不分大小写：统一成小写的绝对路径再比较，否则同一个文件会被算两次
+    norm = lambda p: os.path.normcase(os.path.abspath(p))  # noqa: E731
+    skip = frozenset(norm(p) for p in skip)
     tone = TONE.get(key, DEFAULT_TONE)
     out = Inspection(key)
     files: list[tuple[int, str, os.stat_result]] = []   # 小顶堆，只留最大的
@@ -180,7 +183,7 @@ def inspect(key: str, paths: list[str], cancel: threading.Event | None = None,
                     stack.append(e.path)
                 else:
                     st = e.stat(follow_symlinks=False)
-                    if is_cloud_placeholder(st) or st.st_size < MIN_FILE or e.path in skip:
+                    if is_cloud_placeholder(st) or st.st_size < MIN_FILE or (skip and norm(e.path) in skip):
                         continue
                     item = (st.st_size, e.path, st)
                     if len(files) < MAX_FILES:

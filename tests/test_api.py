@@ -175,3 +175,18 @@ def test_cleanable_items_not_suggested_twice(world):
     api.scan(); api.wait_idle()
     names = {i["name"] for g in api.inspect("downloads")["groups"] for i in g["items"]}
     assert "AppSetup.exe" not in names
+
+
+def test_skip_matches_regardless_of_case(tmp_path):
+    """Windows 上缓存路径是小写的，文件路径是原样的；比较时要不分大小写。"""
+    import core.inspect as insp
+    from core.inspect import inspect
+    dl = tmp_path / "Downloads"
+    f = make(dl / "AppSetup.exe", 60 * MB, age_days=40)
+    real_norm = os.path.normcase
+    try:
+        insp.os.path.normcase = lambda p: p.lower()        # 模拟 Windows 的不分大小写
+        out = inspect("downloads", [str(dl)], skip={str(f).lower()})
+    finally:
+        insp.os.path.normcase = real_norm
+    assert out.items == []
