@@ -1,4 +1,6 @@
-# 留白
+# 留白 · Blankspace
+
+A calm disk cleaner for Windows — see where your space went, clean caches safely, tidy files, undo anything.
 
 一个 Windows 上的磁盘清理和文件整理工具。整个窗口是一张宣纸上的水墨：墨越深，占的空间越大；空着的纸，就是你的可用空间。
 
