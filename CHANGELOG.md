@@ -1,5 +1,17 @@
 # 更新记录
 
+## 0.5.1 — 新图标，补全缓存位置
+
+- 新图标：宣纸上一笔圆，上面留一个缺口。
+- 对照 BleachBit 和 Winapp2（CCleaner 社区规则库）补全了缓存位置：
+  - Chrome、Edge 除了网页缓存，还清显卡和着色器缓存（GPUCache、ShaderCache、GrShaderCache、Dawn 缓存、Media Cache）。不碰 Service Worker、IndexedDB、Local Storage、Cookies——那是网站的离线数据和登录状态。
+  - 新增 Brave、Opera 浏览器缓存。
+  - 新增“系统网页缓存”（INetCache，Windows 自带的磁盘清理也会清）。
+  - 新增“显卡着色器缓存”（DirectX、NVIDIA、AMD），默认不选：清了游戏第一次打开会卡一会儿。
+  - 新增 Discord、Slack、Steam 网页缓存；NuGet、Go、Cargo 下载和编译缓存。默认都不选。
+  - VS Code 一类编辑器：同时认 Cursor、Windsurf、VSCodium，并清掉下载过的插件安装包和崩溃记录。
+  - 这些程序开着时，对应那一项不清。
+
 ## 0.5 — 你选了才看，快而轻
 
 - **打开时不再扫描任何东西。** 首页列出所有磁盘（C、D、移动硬盘）和常用文件夹，你选了才去看；看过的地方记住结果，下次直接显示，不重复读硬盘。

@@ -238,3 +238,31 @@ def test_cloud_placeholder_detection():
     class Local:
         st_file_attributes = 0x20
     assert is_cloud_placeholder(St()) and not is_cloud_placeholder(Local())
+
+
+def test_windows_cache_list_only_touches_regenerable_caches(tmp_path, monkeypatch):
+    """Windows 的缓存名单（参考 BleachBit / Winapp2）：每一项都在用户自己的程序数据里，
+    不碰登录状态、网站离线数据和聊天记录；对应的程序开着时能识别出来。"""
+    from core import procs
+    up = tmp_path / "User"
+    monkeypatch.setattr(safety, "WINDOWS", True)
+    for k, v in {"USERPROFILE": up, "LOCALAPPDATA": up / "AppData" / "Local",
+                 "APPDATA": up / "AppData" / "Roaming"}.items():
+        monkeypatch.setenv(k, str(v))
+    monkeypatch.setattr(safety.Path, "home", classmethod(lambda cls: up))
+    caches = safety._build_safe_caches()
+    keys = [c.key for c in caches]
+    assert len(keys) == len(set(keys))
+    bad = ("cookies", "local storage", "indexeddb", "service worker", "session storage", "login data",
+           "msg", "history", "bookmarks")
+    for c in caches:
+        if c.key in ("temp", "installers"):
+            continue
+        assert c.roots, c.key
+        for r in c.roots:
+            assert str(up) in r, (c.key, r)
+            assert not any(b in r.lower().replace("\\", "/").split("/")[-1] for b in bad), (c.key, r)
+        if c.group != "系统" or c.cost:
+            assert not c.default, f"{c.key} 有代价，不能默认勾选"
+    for k in ("chrome", "edge", "brave", "discord", "slack", "vscode", "steam"):
+        assert k in procs.CACHE_USERS, k

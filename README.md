@@ -1,3 +1,5 @@
+<img src="packaging/liubai.png" width="96" alt="留白">
+
 # 留白 · Blankspace
 
 A calm disk cleaner for Windows — see where your space went, clean caches safely, tidy files, undo anything.

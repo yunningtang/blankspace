@@ -19,7 +19,8 @@ FRIENDLY = {
     "chrome.exe": "Chrome 浏览器", "msedge.exe": "Edge 浏览器", "firefox.exe": "Firefox 浏览器",
     "wechat.exe": "微信", "weixin.exe": "微信", "wechatappex.exe": "微信（小程序）", "qq.exe": "QQ",
     "dingtalk.exe": "钉钉", "feishu.exe": "飞书", "lark.exe": "飞书", "teams.exe": "Teams", "ms-teams.exe": "Teams",
-    "code.exe": "VS Code", "explorer.exe": "资源管理器", "winword.exe": "Word", "excel.exe": "Excel",
+    "code.exe": "VS Code", "cursor.exe": "Cursor", "windsurf.exe": "Windsurf", "brave.exe": "Brave 浏览器",
+    "opera.exe": "Opera 浏览器", "opera_gx.exe": "Opera GX", "discord.exe": "Discord", "slack.exe": "Slack", "explorer.exe": "资源管理器", "winword.exe": "Word", "excel.exe": "Excel",
     "powerpnt.exe": "PowerPoint", "outlook.exe": "Outlook", "onedrive.exe": "OneDrive",
     "steam.exe": "Steam", "steamwebhelper.exe": "Steam", "spotify.exe": "Spotify",
     "photoshop.exe": "Photoshop", "acrobat.exe": "Acrobat", "wps.exe": "WPS", "et.exe": "WPS 表格",
@@ -35,8 +36,10 @@ CRITICAL = {"system", "system idle process", "registry", "smss.exe", "csrss.exe"
 # 哪些程序开着时，它的缓存清不掉（缓存的 key → 进程名）
 CACHE_USERS = {
     "chrome": ("chrome.exe",), "edge": ("msedge.exe",), "firefox": ("firefox.exe",),
-    "wxcache": ("wechat.exe", "weixin.exe"), "teams": ("teams.exe", "ms-teams.exe"), "vscode": ("code.exe",),
+    "wxcache": ("wechat.exe", "weixin.exe"), "teams": ("teams.exe", "ms-teams.exe"), "vscode": ("code.exe", "cursor.exe", "windsurf.exe", "vscodium.exe"),
     "thumbs": ("explorer.exe",),
+    "brave": ("brave.exe",), "opera": ("opera.exe", "opera_gx.exe"), "discord": ("discord.exe",),
+    "slack": ("slack.exe",), "steam": ("steam.exe", "steamwebhelper.exe"),
 }
 
 

@@ -119,8 +119,29 @@ def _appdata(*parts) -> str:
     return os.path.join(_env("APPDATA"), *parts) if _env("APPDATA") else ""
 
 
+# Chromium 系浏览器（Chrome、Edge、Brave…）的缓存目录。参考 BleachBit 的 google_chrome.xml 和 Winapp2：
+# 每个用户配置（Default、Profile 1…）里的网页、脚本、显卡缓存，加上 User Data 下面共用的着色器缓存。
+# 不碰 Service Worker、IndexedDB、Local Storage：那些是网站的离线数据和登录状态。
+_CHROMIUM_PROFILE = ("Cache", "Code Cache", "GPUCache", "Media Cache", "DawnGraphiteCache", "DawnWebGPUCache")
+_CHROMIUM_SHARED = ("ShaderCache", "GrShaderCache", "GraphiteDawnCache")
+
+
 def _chromium(base: str) -> tuple[str, ...]:
-    return tuple(os.path.join(base, "User Data", "*", d) for d in ("Cache", "Code Cache", "GPUCache")) if base else ()
+    if not base:
+        return ()
+    ud = os.path.join(base, "User Data")
+    return tuple(os.path.join(ud, "*", d) for d in _CHROMIUM_PROFILE) + tuple(os.path.join(ud, d) for d in _CHROMIUM_SHARED)
+
+
+def _electron(base: str, extra: tuple[str, ...] = ()) -> tuple[str, ...]:
+    """Electron 程序（VS Code、Discord、Slack…）放在 %APPDATA% 下的缓存。"""
+    return tuple(os.path.join(base, d) for d in ("Cache", "Code Cache", "GPUCache", "DawnGraphiteCache",
+                                                  "DawnWebGPUCache") + extra) if base else ()
+
+
+def _locallow(*parts) -> str:
+    up = _env("USERPROFILE")
+    return os.path.join(up, "AppData", "LocalLow", *parts) if up else ""
 
 
 def _build_safe_caches() -> list[SafeCache]:
@@ -146,6 +167,24 @@ def _build_safe_caches() -> list[SafeCache]:
             SafeCache("firefox", "Firefox 缓存", (_local("Mozilla", "Firefox", "Profiles", "*", "cache2"),),
                       default=False, cost="清了以后，常去的网页第一次打开会慢一些，要重新下载图片和脚本",
                       note="网页缓存。不影响登录、书签和历史记录", group="浏览器"),
+            SafeCache("brave", "Brave 缓存", _chromium(_local("BraveSoftware", "Brave-Browser")),
+                      default=False, cost="清了以后，常去的网页第一次打开会慢一些，要重新下载图片和脚本",
+                      note="网页缓存。不影响登录、书签和历史记录", group="浏览器"),
+            SafeCache("opera", "Opera 缓存",
+                      tuple(_local("Opera Software", n, d) for n in ("Opera Stable", "Opera GX Stable")
+                            for d in ("Cache", "Code Cache", "GPUCache")),
+                      default=False, cost="清了以后，常去的网页第一次打开会慢一些，要重新下载图片和脚本",
+                      note="网页缓存。不影响登录、书签和历史记录", group="浏览器"),
+            SafeCache("inetcache", "系统网页缓存", (_local("Microsoft", "Windows", "INetCache"),), min_age_days=1,
+                      note="Windows 和一些老程序（Office 帮助、旧版网页控件）下载的网页文件。"
+                           "Windows 自带的磁盘清理也会清这一项", group="系统"),
+            SafeCache("shaders", "显卡着色器缓存",
+                      (_local("D3DSCache"), _local("NVIDIA", "DXCache"), _local("NVIDIA", "GLCache"),
+                       _locallow("NVIDIA", "PerDriverVersion", "DXCache"), _local("AMD", "DxCache"),
+                       _local("AMD", "DxcCache"), _local("AMD", "VkCache"), _locallow("AMD", "DxCache")),
+                      min_age_days=1, default=False,
+                      cost="清了以后，游戏和 3D 程序第一次打开时会卡一会儿，等它重新生成",
+                      note="DirectX、NVIDIA、AMD 为游戏和 3D 程序编译好的显卡程序，会自动重新生成", group="系统"),
             SafeCache("wxcache", "微信缓存",
                       (_home("Documents", "WeChat Files", "*", "FileStorage", "Cache"),
                        _home("Documents", "xwechat_files", "*", "cache")),
@@ -156,9 +195,20 @@ def _build_safe_caches() -> list[SafeCache]:
                       tuple(_appdata("Microsoft", "Teams", d) for d in ("Cache", "Code Cache", "GPUCache")),
                       note="经典版 Teams 的网页缓存。不含聊天记录", group="聊天和办公",
                       default=False, cost="清了以后，Teams 第一次打开会慢一些"),
-            SafeCache("vscode", "VS Code 缓存",
-                      tuple(_appdata("Code", d) for d in ("Cache", "CachedData", "Code Cache", "GPUCache", "logs")),
-                      note="编辑器的缓存和旧日志。不影响设置和插件", group="开发工具",
+            SafeCache("discord", "Discord 缓存", _electron(_appdata("discord")),
+                      default=False, cost="清了以后，聊天里的图片和表情要重新加载",
+                      note="看过的图片、表情的缓存。不含聊天记录和登录", group="聊天和办公"),
+            SafeCache("slack", "Slack 缓存", _electron(_appdata("Slack")),
+                      default=False, cost="清了以后，Slack 第一次打开会慢一些",
+                      note="网页缓存。不含消息和登录", group="聊天和办公"),
+            SafeCache("steam", "Steam 网页缓存", (_local("Steam", "htmlcache"),),
+                      default=False, cost="清了以后，Steam 商店页面第一次打开会慢一些",
+                      note="Steam 商店和社区页面的缓存。不影响游戏和存档", group="聊天和办公"),
+            SafeCache("vscode", "VS Code 一类编辑器的缓存",
+                      sum((_electron(_appdata(n), ("CachedData", "CachedExtensionVSIXs", "Crashpad", "logs"))
+                           for n in ("Code", "Cursor", "Windsurf", "VSCodium")), ()),
+                      note="VS Code、Cursor、Windsurf 的缓存、下载过的插件安装包和旧日志。不影响设置、插件和编辑记录",
+                      group="开发工具",
                       default=False, cost="清了以后，VS Code 第一次打开会慢一些"),
             SafeCache("npm", "npm 缓存", (_local("npm-cache", "_cacache"),),
                       default=False, cost="清了以后，下次安装依赖要重新下载，可能要很久",
@@ -172,6 +222,15 @@ def _build_safe_caches() -> list[SafeCache]:
             SafeCache("yarn", "Yarn 缓存", (_local("Yarn", "Cache"),),
                       default=False, cost="清了以后，下次安装依赖要重新下载，可能要很久",
                       note="下载过的 JavaScript 包，需要时会重新下载", group="开发工具"),
+            SafeCache("nuget", "NuGet 缓存", (_local("NuGet", "v3-cache"), _local("NuGet", "plugins-cache")),
+                      default=False, cost="清了以后，下次编译 .NET 项目要重新下载依赖",
+                      note="下载过的 .NET 包索引和插件缓存。不含已经解压的包", group="开发工具"),
+            SafeCache("gobuild", "Go 编译缓存", (_local("go-build"),),
+                      default=False, cost="清了以后，下次编译 Go 项目会慢一些",
+                      note="Go 编译过程的中间结果，会自动重新生成", group="开发工具"),
+            SafeCache("cargo", "Cargo 下载缓存", (_home(".cargo", "registry", "cache"),),
+                      default=False, cost="清了以后，下次编译 Rust 项目要重新下载依赖",
+                      note="下载过的 Rust 包的压缩文件。已经解压的源码不动", group="开发工具"),
             SafeCache("gradle", "Gradle 缓存", (_home(".gradle", "caches"),), default=False,
                       note="安卓和 Java 项目的依赖", group="开发工具",
                       cost="清了以后，下次编译要重新下载全部依赖，可能要很久"),
