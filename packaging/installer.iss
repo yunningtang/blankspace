@@ -1,5 +1,5 @@
 ; Inno Setup 安装程序。在 Windows 上：
-;   ISCC.exe /DAppVersion=0.6.0 packaging\installer.iss
+;   ISCC.exe /DAppVersion=0.7.0 packaging\installer.iss
 ; 装到当前用户自己的目录，不需要管理员权限。
 
 #ifndef AppVersion
@@ -8,60 +8,71 @@
 
 [Setup]
 AppId={{6B1E2B7A-3C1F-4E7B-9A55-5F0C9B2D7A11}
-AppName=留白
+AppName=留白 Blankspace
 AppVersion={#AppVersion}
-AppVerName=留白 {#AppVersion}
+AppVerName=留白 Blankspace {#AppVersion}
 AppPublisher=yunningtang
 AppPublisherURL=https://github.com/yunningtang/blankspace
 AppSupportURL=https://github.com/yunningtang/blankspace/issues
 DefaultDirName={localappdata}\Programs\Liubai
-DefaultGroupName=留白
+DefaultGroupName=留白 Blankspace
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\dist
 OutputBaseFilename=Liubai-Setup-{#AppVersion}
 SetupIconFile=liubai.ico
 UninstallDisplayIcon={app}\Liubai.exe
-UninstallDisplayName=留白
+UninstallDisplayName=留白 Blankspace
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-InfoBeforeFile=before-install.txt
 ChangesAssociations=yes
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
 #if FileExists(SourcePath + "ChineseSimplified.isl")
-Name: "chs"; MessagesFile: "ChineseSimplified.isl"
+Name: "chs"; MessagesFile: "ChineseSimplified.isl"; InfoBeforeFile: "before-install.txt"
 #endif
-Name: "en"; MessagesFile: "compiler:Default.isl"
+Name: "en"; MessagesFile: "compiler:Default.isl"; InfoBeforeFile: "before-install.en.txt"
+
+[CustomMessages]
+#if FileExists(SourcePath + "ChineseSimplified.isl")
+chs.ContextMenu=用留白看看这里
+chs.ContextMenuTask=在资源管理器的右键菜单里加“用留白看看这里”（只是打开留白看看，不会动文件）
+chs.ContextMenuGroup=右键菜单：
+chs.AppTitle=留白
+#endif
+en.ContextMenu=Look here with Blankspace
+en.ContextMenuTask=Add “Look here with Blankspace” to File Explorer’s right-click menu (it only opens Blankspace, it never touches files)
+en.ContextMenuGroup=Right-click menu:
+en.AppTitle=Blankspace
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
-Name: "contextmenu"; Description: "在资源管理器的右键菜单里加“用留白看看这里”（只是打开留白看看，不会动文件）"; GroupDescription: "右键菜单："
+Name: "contextmenu"; Description: "{cm:ContextMenuTask}"; GroupDescription: "{cm:ContextMenuGroup}"
 
 [Files]
 Source: "..\dist\Liubai\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\留白"; Filename: "{app}\Liubai.exe"
-Name: "{autodesktop}\留白"; Filename: "{app}\Liubai.exe"; Tasks: desktopicon
+Name: "{autoprograms}\{cm:AppTitle}"; Filename: "{app}\Liubai.exe"
+Name: "{autodesktop}\{cm:AppTitle}"; Filename: "{app}\Liubai.exe"; Tasks: desktopicon
 
 [Registry]
 ; 只写当前用户（HKCU），不需要管理员权限；卸载时一起删掉。
-Root: HKCU; Subkey: "Software\Classes\Directory\shell\Liubai"; ValueType: string; ValueName: ""; ValueData: "用留白看看这里"; Flags: uninsdeletekey; Tasks: contextmenu
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\Liubai"; ValueType: string; ValueName: ""; ValueData: "{cm:ContextMenu}"; Flags: uninsdeletekey; Tasks: contextmenu
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\Liubai"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\Liubai.exe"; Tasks: contextmenu
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\Liubai\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Liubai.exe"" ""%1"""; Tasks: contextmenu
-Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\Liubai"; ValueType: string; ValueName: ""; ValueData: "用留白看看这里"; Flags: uninsdeletekey; Tasks: contextmenu
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\Liubai"; ValueType: string; ValueName: ""; ValueData: "{cm:ContextMenu}"; Flags: uninsdeletekey; Tasks: contextmenu
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\Liubai"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\Liubai.exe"; Tasks: contextmenu
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\Liubai\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Liubai.exe"" ""%V"""; Tasks: contextmenu
-Root: HKCU; Subkey: "Software\Classes\Drive\shell\Liubai"; ValueType: string; ValueName: ""; ValueData: "用留白看看这里"; Flags: uninsdeletekey; Tasks: contextmenu
+Root: HKCU; Subkey: "Software\Classes\Drive\shell\Liubai"; ValueType: string; ValueName: ""; ValueData: "{cm:ContextMenu}"; Flags: uninsdeletekey; Tasks: contextmenu
 Root: HKCU; Subkey: "Software\Classes\Drive\shell\Liubai"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\Liubai.exe"; Tasks: contextmenu
 Root: HKCU; Subkey: "Software\Classes\Drive\shell\Liubai\command"; ValueType: string; ValueName: ""; ValueData: """{app}\Liubai.exe"" ""%1"""; Tasks: contextmenu
 
 [Run]
-Filename: "{app}\Liubai.exe"; Description: "{cm:LaunchProgram,留白}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\Liubai.exe"; Description: "{cm:LaunchProgram,留白 Blankspace}"; Flags: nowait postinstall skipifsilent
 
 ; 卸载时只删程序本身。清理记录和设置（%LOCALAPPDATA%\Liubai）留着，用户自己决定。
 

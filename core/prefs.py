@@ -26,11 +26,13 @@ class Prefs:
         self.keep: set[str] = set()
         self.consented = False
         self.allow_changes = False
+        self.lang = "auto"              # auto（跟系统）/ zh / en
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
             self.keep = set(data.get("keep", []))
             self.consented = bool(data.get("consented", False))
             self.allow_changes = bool(data.get("allow_changes", False))
+            self.lang = data.get("lang", "auto") if data.get("lang") in ("auto", "zh", "en") else "auto"
         except (OSError, ValueError):
             pass
 
@@ -39,7 +41,7 @@ class Prefs:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             tmp = self.path.with_suffix(".tmp")
             tmp.write_text(json.dumps({"keep": sorted(self.keep), "consented": self.consented,
-                                       "allow_changes": self.allow_changes}, ensure_ascii=False, indent=1),
+                                       "allow_changes": self.allow_changes, "lang": self.lang}, ensure_ascii=False, indent=1),
                            encoding="utf-8")
             os.replace(tmp, self.path)   # 先写临时文件再替换，断电也不会写坏
         except OSError:

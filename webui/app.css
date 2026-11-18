@@ -234,3 +234,15 @@ button { font-family: inherit; }
 .oneclick { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 18px; }
 .oneclick .go { align-self: flex-start; }
 .oneclick .h { font-size: 11.5px; color: var(--ink3); line-height: 1.6; }
+
+/* 英文：换西文衬线字体，去掉为中文加的字距；小标题用小型大写 */
+body.en { --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Noto Serif SC", serif; }
+body.en .tb-title { letter-spacing: .06em; }
+body.en .meta, body.en .sec, body.en .gh, body.en .crumbs, body.en .back { letter-spacing: .04em; }
+body.en .sec > span:first-child, body.en .gh > span:first-child { text-transform: uppercase; font-size: 10.5px; letter-spacing: .1em; }
+body.en .go, body.en .yes, body.en .bt, body.en .unit, body.en .big small, body.en .h1, body.en .dname { letter-spacing: .01em; }
+body.en .big { font-size: 56px; }
+
+/* 语言：说明页右上角的小链接、设置里的三选一 */
+.langs { display: flex; justify-content: flex-end; margin-bottom: -6px; font-size: 11.5px; }
+.chips.seg button.on { color: var(--ink); border-bottom-color: var(--ink); }

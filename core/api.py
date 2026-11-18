@@ -17,7 +17,7 @@ import time
 import uuid
 from pathlib import Path
 
-from . import cleanables, cleaner, dupes, inspect as insp, mover, naming, places, procs, recycle, tidy, tree, winshell
+from . import cleanables, cleaner, dupes, i18n, inspect as insp, mover, naming, places, procs, recycle, tidy, tree, winshell
 from .cleaner import Entry
 from .oplog import OpLog
 from .prefs import Prefs
@@ -69,6 +69,7 @@ class Api:
     def start(self) -> dict:
         """打开时调用。很快：只问系统有哪些盘、读上次看过的列表，不扫任何文件。"""
         return {"consented": self.prefs.consented, "allow_changes": self.prefs.allow_changes,
+                "lang": i18n.LANG, "lang_pref": self.prefs.lang,
                 "drives": places.drives(), "folders": places.folders(self.home),
                 "recent": tree.known_snapshots(self._snaps)[:6], "start_path": self.start_path,
                 "home": self.home}
@@ -78,6 +79,19 @@ class Api:
         self.prefs.allow_changes = bool(allow_changes)
         self.prefs.save()
         return {"allow_changes": self.prefs.allow_changes}
+
+    def apply_lang(self) -> str:
+        """程序启动时调用：按设置（或系统语言）定下界面语言。测试里不调用，保持中文。"""
+        return i18n.set_lang(i18n.system_lang() if self.prefs.lang == "auto" else self.prefs.lang)
+
+    def set_lang(self, lang: str) -> dict:
+        """auto（跟系统）/ zh / en。留白新建的文件夹也按这个语言起名。"""
+        self.prefs.lang = lang if lang in ("auto", "zh", "en") else "auto"
+        self.prefs.save()
+        i18n.set_lang(i18n.system_lang() if self.prefs.lang == "auto" else self.prefs.lang)
+        with self._lock:
+            self._bump()
+        return {"lang": i18n.LANG, "lang_pref": self.prefs.lang}
 
     def set_allow_changes(self, on: bool) -> dict:
         self.prefs.allow_changes = bool(on)
@@ -168,6 +182,7 @@ class Api:
                          "drive": tree.is_drive_root(t.root)}
             return {"version": self._version, "scan": dict(self._scan), "place": place, "error": self._error,
                     "job": dict(self._job) if self._job else None, "allow_changes": self.prefs.allow_changes,
+                    "lang": i18n.LANG,
                     "bin": recycle.bin_used(self._tree.root) if (self._tree and os.name == "nt") else 0}
 
     # ================================================================ 往里走
@@ -418,7 +433,7 @@ class Api:
             ds = {d["path"]: d for d in self.drives()}
             if target not in ds:
                 return {"error": "找不到要挪去的盘"}
-            base = os.path.join(target, "留白挪出")
+            base = os.path.join(target, i18n.folder("留白挪出"))
             for i in ids:
                 s = self._find_suggestion(i)
                 src = s.path if s else i
@@ -587,3 +602,29 @@ class Api:
 
 
 
+
+
+# ---------------------------------------------------------------- 语言
+# 每个公开方法的结果在交给界面之前翻成当前语言。方法里面互相调用时不翻（只在最外层翻一次），
+# 所以核心逻辑拿到的永远是中文原文。
+_depth = threading.local()
+
+
+def _translated(fn):
+    import functools
+
+    @functools.wraps(fn)
+    def wrapper(*a, **k):
+        d = getattr(_depth, "n", 0)
+        _depth.n = d + 1
+        try:
+            out = fn(*a, **k)
+        finally:
+            _depth.n = d
+        return i18n.translate(out) if d == 0 else out
+    return wrapper
+
+
+for _name, _fn in list(vars(Api).items()):
+    if callable(_fn) and not _name.startswith("_") and _name != "wait_idle":
+        setattr(Api, _name, _translated(_fn))

@@ -76,7 +76,7 @@ jobs:
         shell: pwsh
         run: |
           $setup = Get-ChildItem dist\Liubai-Setup-*.exe | Select-Object -First 1
-          $p = Start-Process $setup.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/TASKS=contextmenu" -PassThru -Wait
+          $p = Start-Process $setup.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/TASKS=contextmenu","/LANG=chs" -PassThru -Wait
           if ($p.ExitCode -ne 0) { throw "安装失败：$($p.ExitCode)" }
           $app = Join-Path $env:LOCALAPPDATA "Programs\Liubai\Liubai.exe"
           if (-not (Test-Path $app)) { throw "装好以后找不到 $app" }
@@ -91,7 +91,7 @@ jobs:
             if ($v -ne "`"$app`" $($x.arg)") { throw "右键菜单的命令不对：$v" }
           }
           $label = (Get-Item "HKCU:\Software\Classes\Directory\shell\Liubai").GetValue("")
-          if ($label -ne "用留白看看这里") { throw "右键菜单的文字不对：$label" }
+          if ($label -ne "用留白看看这里" -and $label -ne "Look here with Blankspace") { throw "右键菜单的文字不对：$label" }
           # 带着文件夹启动：能起来、不崩（几秒后关掉）
           $run = Start-Process $app -ArgumentList "$env:USERPROFILE" -PassThru
           Start-Sleep -Seconds 8

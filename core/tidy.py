@@ -14,6 +14,7 @@ import os
 import time
 from dataclasses import dataclass, field
 
+from . import i18n
 from .fs import folder_size, is_link_or_junction, stamp
 
 ARCHIVE = "归档"
@@ -82,7 +83,7 @@ def propose(where: str, folder: str, pictures: str, videos: str, now: float | No
     shots = Proposal(f"tidy:{where}:shots", "截图和录屏", "放进 图片 › 截图、视频 › 录屏，按月份分好")
     old_days = 30 if where == "downloads" else 90
     old = Proposal(f"tidy:{where}:old", f"{old_days} 天没碰过的{'东西' if where == 'downloads' else '文件'}",
-                   f"收进 {label} › {ARCHIVE}，按月份分好")
+                   f"收进 {label} › {i18n.folder(ARCHIVE)}，按月份分好")
     try:
         entries = list(os.scandir(folder))
     except OSError:
@@ -92,7 +93,7 @@ def propose(where: str, folder: str, pictures: str, videos: str, now: float | No
             name, low = e.name, e.name.lower()
             if is_link_or_junction(e) or name.startswith(".") or low in SKIP_NAMES or low.endswith(PARTIAL):
                 continue
-            if name == ARCHIVE:
+            if name in i18n.folder_names(ARCHIVE):
                 continue
             is_dir = e.is_dir(follow_symlinks=False)
             st = e.stat(follow_symlinks=False)
@@ -101,7 +102,8 @@ def propose(where: str, folder: str, pictures: str, videos: str, now: float | No
             used = _last_used(e.path, st, is_dir)
             age = (now - used) / 86400
             if not is_dir and is_shot(name) and age > 1:
-                base = os.path.join(videos, "录屏") if low.endswith(VIDEO) else os.path.join(pictures, "截图")
+                base = os.path.join(videos, i18n.folder("录屏")) if low.endswith(VIDEO) \
+                    else os.path.join(pictures, i18n.folder("截图"))
                 dst = os.path.join(base, _month(st.st_mtime), name)
                 shots.moves.append((e.path, dst))
                 shots.sizes[e.path] = st.st_size
@@ -111,7 +113,7 @@ def propose(where: str, folder: str, pictures: str, videos: str, now: float | No
                 continue
             if where == "desktop" and (is_dir or low.endswith(SHORTCUT)):
                 continue                                    # 桌面上的文件夹和快捷方式是用户摆好的
-            dst = os.path.join(folder, ARCHIVE, _month(used), name)
+            dst = os.path.join(folder, i18n.folder(ARCHIVE), _month(used), name)
             old.moves.append((e.path, dst))
             old.sizes[e.path] = folder_size(e.path) if is_dir else st.st_size
             old.stamps[e.path] = None if is_dir else stamp(e.path)

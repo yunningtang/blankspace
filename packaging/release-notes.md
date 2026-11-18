@@ -1,3 +1,5 @@
+**English**: Blankspace follows your Windows display language (Chinese or English); change it in Settings → Language. See the [English README](https://github.com/yunningtang/blankspace/blob/main/README.en.md).
+
 ## 下载
 
 - **Liubai-Setup-x.x.x.exe**：安装版。双击安装，不需要管理员权限，装在你自己的用户目录里。

@@ -1,0 +1,13 @@
+﻿What Blankspace does, and what it doesn't
+
+· Nothing is scanned when it opens. It looks at a drive or folder only after you pick one, and remembers places it has seen.
+· It only looks by default. It moves or removes files only after you turn on “Allow tidying and cleaning” in Settings.
+· Every time, before doing anything, it lists what it will touch and what it won't, and starts only when you confirm.
+· Nothing is permanently deleted: removing means moving to the Recycle Bin, and anything that can't go there is left alone. Moves, renames and tidying can all be undone.
+· Windows, Program Files, program data and OneDrive are never touched.
+· No network access, no ads, nothing collected.
+
+It installs into your own user folder and needs no administrator rights.
+Optional: add “Look here with Blankspace” to File Explorer's right-click menu (on Windows 11, under “Show more options”). Uninstalling removes it.
+
+History and settings are kept in %LOCALAPPDATA%\Liubai. Uninstalling doesn't remove them; that's up to you.

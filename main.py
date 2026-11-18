@@ -6,7 +6,7 @@
 import os
 import sys
 
-__version__ = "0.6.0"
+__version__ = "0.7.0"
 
 
 def resource(*parts):
@@ -27,6 +27,7 @@ class Bridge:
     def start(self): return self._api.start()
     def set_consent(self, allow_changes): return self._api.set_consent(allow_changes)
     def set_allow_changes(self, on): return self._api.set_allow_changes(on)
+    def set_lang(self, lang): return self._api.set_lang(lang)
     def open_place(self, path, rescan=False): return self._api.open_place(path, rescan)
     def scan_control(self, action): return self._api.scan_control(action)
     def close_place(self): return self._api.close_place()
@@ -89,10 +90,13 @@ def start_path_from_args(argv):
 def run_web():
     import webview  # pywebview
 
+    from core import i18n
     from core.api import Api
-    bridge = Bridge(Api(start_path=start_path_from_args(sys.argv)))
+    api = Api(start_path=start_path_from_args(sys.argv))
+    api.apply_lang()
+    bridge = Bridge(api)
     window = webview.create_window(
-        "留白", resource("webui", "index.html"), js_api=bridge,
+        "留白" if i18n.LANG == "zh" else "Blankspace", resource("webui", "index.html"), js_api=bridge,
         width=1200, height=760, min_size=(960, 620),
         frameless=True, easy_drag=False, background_color="#FCFBF8",
     )
@@ -104,19 +108,27 @@ WEBVIEW2_URL = "https://developer.microsoft.com/microsoft-edge/webview2/"
 
 
 def explain_no_window(err: Exception) -> None:
-    msg = (f"留白的窗口打不开（{err.__class__.__name__}）。\n\n"
-           "通常是因为这台电脑上没有 Microsoft Edge WebView2（Windows 11 自带，"
-           "大部分 Windows 10 也有）。装好以后再打开留白就可以了。\n\n现在打开下载页面吗？")
+    from core import i18n
+    if i18n.system_lang() == "en":
+        msg = (f"Blankspace can’t open its window ({err.__class__.__name__}).\n\n"
+               "This usually means Microsoft Edge WebView2 is missing (it comes with Windows 11 and most "
+               "Windows 10 PCs). Install it, then open Blankspace again.\n\nOpen the download page now?")
+    else:
+        msg = (f"留白的窗口打不开（{err.__class__.__name__}）。\n\n"
+               "通常是因为这台电脑上没有 Microsoft Edge WebView2（Windows 11 自带，"
+               "大部分 Windows 10 也有）。装好以后再打开留白就可以了。\n\n现在打开下载页面吗？")
     if sys.platform == "win32":
         try:
             import ctypes
-            if ctypes.windll.user32.MessageBoxW(None, msg, "留白", 0x4 | 0x40) == 6:   # 是 / 否
+            title = "Blankspace" if i18n.system_lang() == "en" else "留白"
+            if ctypes.windll.user32.MessageBoxW(None, msg, title, 0x4 | 0x40) == 6:   # 是 / 否
                 import webbrowser
                 webbrowser.open(WEBVIEW2_URL)
             return
         except Exception:
             pass
-    print(msg.replace("现在打开下载页面吗？", WEBVIEW2_URL), file=sys.stderr)
+    print(msg.replace("现在打开下载页面吗？", WEBVIEW2_URL).replace("Open the download page now?", WEBVIEW2_URL),
+          file=sys.stderr)
 
 
 def main():

@@ -13,6 +13,7 @@ import os
 import re
 from dataclasses import dataclass, field
 
+from . import i18n
 from .fs import is_link_or_junction, stamp
 from .safety import is_protected
 
@@ -202,4 +203,4 @@ def propose_versions(folder: str) -> list[VersionGroup]:
 
 
 def version_moves(g: VersionGroup) -> list[tuple[str, str]]:
-    return [(p, os.path.join(g.folder, OLD, os.path.basename(p))) for p in g.older]
+    return [(p, os.path.join(g.folder, i18n.folder(OLD), os.path.basename(p))) for p in g.older]

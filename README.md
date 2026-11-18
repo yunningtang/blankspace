@@ -11,9 +11,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/yunningtang/blankspace/releases/download/v0.6.0/Liubai-Setup-0.6.0.exe"><img src="https://img.shields.io/badge/下载安装版-Windows%2010%20%2F%2011-1a1917?style=for-the-badge" alt="下载安装版"></a>
+  <a href="https://github.com/yunningtang/blankspace/releases/download/v0.7.0/Liubai-Setup-0.7.0.exe"><img src="https://img.shields.io/badge/下载安装版-Windows%2010%20%2F%2011-1a1917?style=for-the-badge" alt="下载安装版"></a>
   &nbsp;
-  <a href="https://github.com/yunningtang/blankspace/releases/download/v0.6.0/Liubai-0.6.0-portable.zip"><img src="https://img.shields.io/badge/下载便携版-免安装%20zip-6b665f?style=for-the-badge" alt="下载便携版"></a>
+  <a href="https://github.com/yunningtang/blankspace/releases/download/v0.7.0/Liubai-0.7.0-portable.zip"><img src="https://img.shields.io/badge/下载便携版-免安装%20zip-6b665f?style=for-the-badge" alt="下载便携版"></a>
 </p>
 
 <p align="center">
@@ -21,6 +21,8 @@
   <a href="https://github.com/yunningtang/blankspace/releases"><img src="https://img.shields.io/github/downloads/yunningtang/blankspace/total?label=下载次数&color=6b665f" alt="下载次数"></a>
   <a href="https://github.com/yunningtang/blankspace/actions/workflows/windows.yml"><img src="https://github.com/yunningtang/blankspace/actions/workflows/windows.yml/badge.svg" alt="Windows 测试"></a>
 </p>
+
+<p align="center"><a href="README.en.md">English</a> · <b>中文</b></p>
 
 ![全貌](docs/images/overview.jpg)
 
@@ -58,12 +60,13 @@
 
 | | 文件 | 说明 |
 |---|---|---|
-| **安装版** | [Liubai-Setup-0.6.0.exe](https://github.com/yunningtang/blankspace/releases/download/v0.6.0/Liubai-Setup-0.6.0.exe) | 双击安装，不需要管理员权限，装在你自己的用户目录里。可以选择在资源管理器右键菜单里加“用留白看看这里”。 |
-| **便携版** | [Liubai-0.6.0-portable.zip](https://github.com/yunningtang/blankspace/releases/download/v0.6.0/Liubai-0.6.0-portable.zip) | 解压后双击 `Liubai.exe`，不写注册表。 |
+| **安装版** | [Liubai-Setup-0.7.0.exe](https://github.com/yunningtang/blankspace/releases/download/v0.7.0/Liubai-Setup-0.7.0.exe) | 双击安装，不需要管理员权限，装在你自己的用户目录里。可以选择在资源管理器右键菜单里加“用留白看看这里”。 |
+| **便携版** | [Liubai-0.7.0-portable.zip](https://github.com/yunningtang/blankspace/releases/download/v0.7.0/Liubai-0.7.0-portable.zip) | 解压后双击 `Liubai.exe`，不写注册表。 |
 
 所有版本和 SHA256 校验值在 [Releases](https://github.com/yunningtang/blankspace/releases)。
 
 - 需要 Windows 10 或 11（64 位），以及 Microsoft Edge WebView2（Windows 11 自带，大部分 Windows 10 也有；没有的话留白会告诉你去哪下载）。
+- 界面跟着 Windows 的显示语言走（中文或英文），也可以在“设置 → 语言”里换。
 - 程序还没有数字签名，第一次打开时如果 Windows 提示“已保护你的电脑”，点“更多信息”→“仍要运行”。
 - Windows 11 上，右键菜单里的“用留白看看这里”在“显示更多选项”里。
 

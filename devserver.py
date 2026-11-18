@@ -18,9 +18,10 @@ from core.api import Api
 
 WEB = Path(__file__).resolve().parent / "webui"
 api = Api()
+api.apply_lang()
 # 本机其他网页也能访问 127.0.0.1，所以每次启动生成一个口令：只有带着口令的请求才会被执行。
 TOKEN = secrets.token_urlsafe(16)
-ALLOWED = {"start", "set_consent", "set_allow_changes", "open_place", "scan_control", "close_place", "cancel",
+ALLOWED = {"start", "set_consent", "set_allow_changes", "set_lang", "open_place", "scan_control", "close_place", "cancel",
            "state", "view", "tool", "caches", "processes", "drives", "history", "set_keep", "set_keeper", "plan",
            "execute", "undo", "clear_job", "end_processes", "reveal", "open_folder", "open_file",
            "open_recycle_bin", "open_storage_settings"}
