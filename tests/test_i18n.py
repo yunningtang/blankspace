@@ -53,6 +53,8 @@ def test_templates_and_folders():
         assert i18n.tr("30 天没碰过的东西") == "Things untouched for 30 days"
         assert i18n.tr("C:\\Users\\张三\\下载") == "C:\\Users\\张三\\下载"          # 路径不像任何一句话：原样
         assert i18n.folder("旧版本") == "Old versions"
+        assert i18n.translate({"name": "C 盘"}) == {"name": "Drive C"}          # 盘的名字（只在 Windows 上出现）
+        assert i18n.translate({"name": "我的 盘"}) == {"name": "我的 盘"}        # 用户的文件夹名不动
         assert i18n.translate({"path": "下载", "name": "临时文件", "why": "文件已经不在了",
                                "failed": [["C:\\文件已经不在了", "文件已经不在了"]]}) == \
             {"path": "下载", "name": "Temporary files", "why": "The file is no longer there",

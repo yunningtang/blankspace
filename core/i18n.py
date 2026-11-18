@@ -385,6 +385,12 @@ def translate(obj, key: str | None = None):
         if key in USER_KEYS:
             return obj
         if key == "name":                  # 名字：只有我们自己起的名字才翻（文件夹名可能本来就叫“下载”）
-            return _EXACT.get(obj, obj) if not callable(_EXACT.get(obj)) else obj
+            if obj in _EXACT and not callable(_EXACT[obj]):
+                return _EXACT[obj]
+            m = _DRIVE.match(obj)          # 盘的名字“C 盘”是我们拼出来的
+            return f"Drive {m.group(1)}" if m else obj
         return tr(obj)
     return obj
+
+
+_DRIVE = re.compile(r"^([A-Za-z]) 盘$")
