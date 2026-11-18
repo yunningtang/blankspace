@@ -1,15 +1,14 @@
 # PyInstaller 配置：在 Windows 上运行 `pyinstaller --noconfirm packaging/liubai.spec`
 # 生成 dist/Liubai/Liubai.exe（文件夹形式，启动快）。
 import os
-from PyInstaller.utils.hooks import collect_data_files
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 
 a = Analysis(
     [os.path.join(ROOT, "main.py")],
     pathex=[ROOT],
-    datas=[(os.path.join(ROOT, "webui"), "webui")] + collect_data_files("customtkinter"),
-    excludes=["pytest"],
+    datas=[(os.path.join(ROOT, "webui"), "webui")],
+    excludes=["pytest", "tkinter", "customtkinter"],
 )
 pyz = PYZ(a.pure)
 exe = EXE(

@@ -1,15 +1,32 @@
-<img src="packaging/liubai.png" width="96" alt="留白">
+<p align="center">
+  <img src="packaging/liubai.png" width="128" alt="留白">
+</p>
 
-# 留白 · Blankspace
+<h1 align="center">留白 · Blankspace</h1>
 
-A calm disk cleaner for Windows — see where your space went, clean caches safely, tidy files, undo anything.
+<p align="center">
+  一个 Windows 上的磁盘清理和文件整理工具。<br>
+  整个窗口是一张宣纸上的水墨：墨越深，占的空间越大；空着的纸，就是你的可用空间。<br>
+  <sub>A calm disk cleaner for Windows — see where your space went, clean caches safely, tidy files, undo anything.</sub>
+</p>
 
-一个 Windows 上的磁盘清理和文件整理工具。整个窗口是一张宣纸上的水墨：墨越深，占的空间越大；空着的纸，就是你的可用空间。
+<p align="center">
+  <a href="https://github.com/yunningtang/blankspace/releases/download/v0.6.0/Liubai-Setup-0.6.0.exe"><img src="https://img.shields.io/badge/下载安装版-Windows%2010%20%2F%2011-1a1917?style=for-the-badge" alt="下载安装版"></a>
+  &nbsp;
+  <a href="https://github.com/yunningtang/blankspace/releases/download/v0.6.0/Liubai-0.6.0-portable.zip"><img src="https://img.shields.io/badge/下载便携版-免安装%20zip-6b665f?style=for-the-badge" alt="下载便携版"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/yunningtang/blankspace/releases/latest"><img src="https://img.shields.io/github/v/release/yunningtang/blankspace?label=最新版本&color=1a1917" alt="最新版本"></a>
+  <a href="https://github.com/yunningtang/blankspace/releases"><img src="https://img.shields.io/github/downloads/yunningtang/blankspace/total?label=下载次数&color=6b665f" alt="下载次数"></a>
+  <a href="https://github.com/yunningtang/blankspace/actions/workflows/windows.yml"><img src="https://github.com/yunningtang/blankspace/actions/workflows/windows.yml/badge.svg" alt="Windows 测试"></a>
+</p>
 
 ![全貌](docs/images/overview.jpg)
 
 ## 它能做什么
 
+- **一键清理**：只清可以放心清的（临时文件、错误报告、缩略图、留白自己的旧记录），先告诉你清什么，点确定才开始。
 - **你选了才看**：打开时不扫描任何东西。选一个盘（C、D、移动硬盘）或文件夹，它才在后台慢慢看；看过的地方记住，下次直接显示。
 - **往里走**：点一块墨就进到那个文件夹，路径每一级都能点回去；右键可以打开、在文件夹中显示、复制路径、移到回收站、挪到别的盘。
 - **资源管理器右键**：在任何文件夹或磁盘上右键“用留白看看这里”。
@@ -39,12 +56,16 @@ A calm disk cleaner for Windows — see where your space went, clean caches safe
 
 ## 下载
 
-到 [Releases](https://github.com/yunningtang/blankspace/releases) 下载最新版：
+| | 文件 | 说明 |
+|---|---|---|
+| **安装版** | [Liubai-Setup-0.6.0.exe](https://github.com/yunningtang/blankspace/releases/download/v0.6.0/Liubai-Setup-0.6.0.exe) | 双击安装，不需要管理员权限，装在你自己的用户目录里。可以选择在资源管理器右键菜单里加“用留白看看这里”。 |
+| **便携版** | [Liubai-0.6.0-portable.zip](https://github.com/yunningtang/blankspace/releases/download/v0.6.0/Liubai-0.6.0-portable.zip) | 解压后双击 `Liubai.exe`，不写注册表。 |
 
-- **Liubai-Setup-x.x.x.exe**：安装版，双击安装，不需要管理员权限。
-- **Liubai-x.x.x-portable.zip**：便携版，解压后双击 `Liubai.exe`。
+所有版本和 SHA256 校验值在 [Releases](https://github.com/yunningtang/blankspace/releases)。
 
-需要 Windows 10 或 11（64 位）。程序没有数字签名，第一次打开时如果 Windows 提示“已保护你的电脑”，点“更多信息”→“仍要运行”。
+- 需要 Windows 10 或 11（64 位），以及 Microsoft Edge WebView2（Windows 11 自带，大部分 Windows 10 也有；没有的话留白会告诉你去哪下载）。
+- 程序还没有数字签名，第一次打开时如果 Windows 提示“已保护你的电脑”，点“更多信息”→“仍要运行”。
+- Windows 11 上，右键菜单里的“用留白看看这里”在“显示更多选项”里。
 
 ## 从源码运行
 

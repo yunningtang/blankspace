@@ -250,6 +250,14 @@ def _build_safe_caches() -> list[SafeCache]:
                       default=False, cost="清了以后，常去的网页第一次打开会慢一些，要重新下载图片和脚本",
                       note="网页缓存。不影响登录、书签和历史记录", group="浏览器"),
         ]
+    # 留白自己的旧东西：90 天前的清理记录、90 天没再看过的地方的扫描快照。和别的缓存一样先问、进回收站。
+    if WINDOWS:
+        own = (_local("Liubai", "logs"), _local("Liubai", "snapshots"))
+        caches.append(SafeCache("liubai_old", "留白自己的旧记录", own, patterns=("*.jsonl", "*.json.gz"),
+                                min_age_days=90,
+                                note="90 天前的清理记录，和 90 天没再看过的地方的扫描结果。"
+                                     "清掉以后，那些更早的挪动就不能在留白里撤销了",
+                                group="系统"))
     # 只认名字像安装包的；直接从下载里运行的便携程序（比如 xxx.exe）不算。默认不勾选。
     caches.append(SafeCache("installers", "下载里的旧安装包", (_home("Downloads"),),
                             patterns=("*.msi", "*setup*.exe", "*install*.exe", "*installer*.exe",

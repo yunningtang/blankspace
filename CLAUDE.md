@@ -1,12 +1,12 @@
 # 磁盘清理工具（Windows）
 
-这是一个 Windows 磁盘清理和文件整理工具，用 Python 3.10+ + CustomTkinter，最后用 PyInstaller 打包成 exe。
+这是一个 Windows 磁盘清理和文件整理工具，用 Python 3.10+ + pywebview（界面是 webui/ 里的网页），最后用 PyInstaller 打包成 exe。
 
 ## 安全规则（必须遵守，任何改动都不能绕过）
 
 ### 删除只有一条路
 - 只有 `core/recycle.py` 能把文件移到回收站（只有 `core/cleaner.py` 能调用它），只有 `core/mover.py` 能移动文件（整理、挪到别的盘、撤销）。**禁止**在任何地方调用 `os.remove`、`os.unlink`、`shutil.rmtree`、`Path.unlink`、`send2trash` 等（测试会检查）。
-- 删除分两步：`cleaner.preflight()` 只读预检，得到 Plan（能移的、不能移的和原因、提醒）→ 界面把 Plan 给用户确认（`ui/confirm.py`）→ `cleaner.execute()` 对每一项**再查一次**后移到回收站。
+- 删除分两步：`cleaner.preflight()` 只读预检，得到 Plan（能移的、不能移的和原因、提醒）→ 界面把 Plan 给用户确认（`webui/app.js` 的确认卡片）→ `cleaner.execute()` 对每一项**再查一次**后移到回收站。
 - 不要在 Windows 上直接用 send2trash：它带 FOF_NOCONFIRMATION，文件放不进回收站时 Windows 会**悄悄永久删除**。`recycle.py` 先检查（本地固定磁盘、回收站开着、不超过回收站容量），再带 FOF_WANTNUKEWARNING 调用系统，删完确认文件确实离开了原处。
 - 移到回收站**不会**腾出空间，清空回收站后才会。界面不能写“已释放”；回收站留白不替用户清空。
 
@@ -29,12 +29,11 @@
 
 ## 结构
 
-- `main.py`：入口。优先用 pywebview 打开 `webui/`；没装 pywebview 时退回旧的 CustomTkinter 界面（`--tk` 也可以强制用旧界面）。
+- `main.py`：入口。用 pywebview 打开 `webui/`；窗口打不开（没有 WebView2）时说明原因、给下载地址，不再退回旧界面。
 - `webui/`：新界面（HTML/CSS/JS）。`ink.js` 是纸和墨的几何与纹理，`app.js` 是界面逻辑。界面只调用后端，从不直接删文件。
 - `core/api.py`：界面和后端之间唯一的接口，不依赖 pywebview，可直接测试。耗时的事都在后台线程，界面轮询 `state()`。
 - `devserver.py`：开发用，在浏览器里打开界面，后端是真的 `Api`（会真的移动文件，请用假的主目录）。
 - `core/`：选地方（places）、文件夹树扫描（tree，只在用户选了地方后才扫，存快照）、扫描（scanner、space）、建议（inspect、naming）、程序（procs）、安全（safety）、删除（cleaner → recycle）、移动（mover）、日志（oplog）、偏好（prefs，含“允许整理和清理”开关，默认关）。
-- `ui/`：旧的 CustomTkinter 界面，作为备用。
 - `tests/`：pytest。`test_safety_flow.py` 一条安全规则一个测试；`test_api.py` 是完整流程。
 
 ## 视觉风格（留白）
@@ -48,7 +47,7 @@
 
 ## 约定
 
-- 耗时操作（扫描、计算哈希）必须放后台线程，通过 `queue` + `after()` 把进度送回界面，界面不能卡死，并且可以取消。
+- 耗时操作（扫描、计算哈希）必须放后台线程，界面轮询 `state()` 拿进度（只在忙的时候轮询），界面不能卡死，并且可以取消。
 - 界面文字用中文。删除按钮写"移到回收站"，不写"删除"。
 - 缓存类默认勾选；旧安装包、微信缓存和所有你的文件默认不勾选。
 - 改完运行 `python -m pytest tests`。

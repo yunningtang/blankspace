@@ -1,12 +1,12 @@
-"""留白：入口。
+"""留白：入口。用 pywebview 打开界面（webui/）。
 
-优先用 pywebview 打开新界面（webui/）；没装 pywebview、或者窗口打不开（比如电脑上没有 WebView2）时，
-退回旧的 CustomTkinter 界面。`--tk` 强制用旧界面。
+窗口打不开（通常是电脑上没有 Microsoft Edge WebView2）时，说明原因并提供下载地址，然后退出。
+以前这里会退回一个旧界面，但那个界面一打开就扫描、也不管“允许整理和清理”的开关，已经去掉。
 """
 import os
 import sys
 
-__version__ = "0.5.1"
+__version__ = "0.6.0"
 
 
 def resource(*parts):
@@ -100,35 +100,34 @@ def run_web():
     webview.start()
 
 
-def run_tk():
-    import ctypes
+WEBVIEW2_URL = "https://developer.microsoft.com/microsoft-edge/webview2/"
+
+
+def explain_no_window(err: Exception) -> None:
+    msg = (f"留白的窗口打不开（{err.__class__.__name__}）。\n\n"
+           "通常是因为这台电脑上没有 Microsoft Edge WebView2（Windows 11 自带，"
+           "大部分 Windows 10 也有）。装好以后再打开留白就可以了。\n\n现在打开下载页面吗？")
     if sys.platform == "win32":
-        try:  # 高分屏下字体清晰
-            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        try:
+            import ctypes
+            if ctypes.windll.user32.MessageBoxW(None, msg, "留白", 0x4 | 0x40) == 6:   # 是 / 否
+                import webbrowser
+                webbrowser.open(WEBVIEW2_URL)
+            return
         except Exception:
             pass
-    from ui.app import App
-    App().mainloop()
+    print(msg.replace("现在打开下载页面吗？", WEBVIEW2_URL), file=sys.stderr)
 
 
 def main():
     if "--version" in sys.argv:
         print(__version__)
         return
-    if "--tk" not in sys.argv:
-        try:
-            run_web()
-            return
-        except Exception as e:  # noqa: BLE001 - 新界面打不开时退回旧界面，并说明原因
-            if sys.platform == "win32":
-                try:
-                    import ctypes
-                    ctypes.windll.user32.MessageBoxW(
-                        None, f"新界面打不开（{e.__class__.__name__}），先用简洁界面。\n"
-                              "如果电脑上没有 Microsoft Edge WebView2，安装后就能用新界面。", "留白", 0x40)
-                except Exception:
-                    pass
-    run_tk()
+    try:
+        run_web()
+    except Exception as e:  # noqa: BLE001 - 说明原因，不留一个打不开也没提示的程序
+        explain_no_window(e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

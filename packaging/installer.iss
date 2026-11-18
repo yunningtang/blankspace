@@ -1,5 +1,5 @@
 ; Inno Setup 安装程序。在 Windows 上：
-;   ISCC.exe /DAppVersion=0.5.0 packaging\installer.iss
+;   ISCC.exe /DAppVersion=0.6.0 packaging\installer.iss
 ; 装到当前用户自己的目录，不需要管理员权限。
 
 #ifndef AppVersion

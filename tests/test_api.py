@@ -223,3 +223,17 @@ def test_inspect_small_folder_sees_smaller_installers(world):
     out = api.tool("inspect", str(small))
     names = [i["name"] for g in out["groups"] if g["lvl"] == "maybe" for i in g["items"]]
     assert "setup_tool.exe" in names
+
+
+def test_one_click_clean_takes_only_safe_defaults(world):
+    """一键清理 = 只取“可以放心清”的默认项，照常预检 → 确认 → 进回收站；没允许时被拒绝。"""
+    api, home, moved, tmp = world
+    items = api.caches()["items"]
+    keys = [x["key"] for x in items if x["default"] and not x["busy"] and x["size"] > 0
+            and x["group"] == "系统" and not x["cost"]]
+    assert keys == ["temp"]
+    assert "error" in api.plan("caches", keys)          # 只看模式：拒绝
+    allow(api)
+    job = run(api, api.plan("caches", keys))
+    assert job["moved"] == 1 and [os.path.basename(p) for p in moved] == ["old.tmp"]
+    assert (home / "Downloads" / "AppSetup.exe").exists()   # 旧安装包默认不选，不会被一键清掉

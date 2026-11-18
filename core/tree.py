@@ -23,10 +23,12 @@ from typing import Callable
 from .fs import is_cloud_placeholder, is_link_or_junction
 from .safety import is_hard_protected
 
-TOP_FILES = 12          # 每个文件夹记住最大的几个文件
+TOP_FILES = 12          # 每个文件夹最多记住几个大文件
+TOP_ALWAYS = 5          # 最大的这几个无论多大都记住；其余的只记 1 M 以上的（小的画出来也看不见）
+TOP_MIN = 1024 * 1024
 
 
-@dataclass
+@dataclass(slots=True)
 class Node:
     path: str
     name: str
@@ -36,9 +38,22 @@ class Node:
     own: int = 0                        # 直接放在这里的文件的大小
     own_files: int = 0
     dirs: list[str] = field(default_factory=list)
-    top: list[tuple[str, int, float]] = field(default_factory=list)   # (文件名, 大小, 修改时间)
+    # 最大的几个文件，摊平存成一个元组：(名字, 大小, 修改时间, 名字, 大小, 修改时间, …)。
+    # 整个 C 盘有几十万个文件夹，每个文件夹少几百字节，加起来就是几百 MB。用 files_top() 读。
+    top: tuple = ()
     newest: float = 0.0                 # 里面最新的修改时间
     skipped: str = ""                   # 没进去看的原因
+
+
+def files_top(n: "Node"):
+    """(文件名, 大小, 修改时间) 一个个给出来。"""
+    t = n.top
+    for i in range(0, len(t), 3):
+        yield t[i], t[i + 1], t[i + 2]
+
+
+def _flat(tops) -> tuple:
+    return tuple(x for f in tops for x in f)
 
 
 @dataclass
@@ -105,7 +120,7 @@ def scan(root: str, cancel: threading.Event | None = None, running: threading.Ev
         except OSError:
             pass
     order: list[Node] = []
-    stack = [Node(root, os.path.basename(root.rstrip("\\/")) or root)]
+    stack = [(key(root), Node(root, os.path.basename(root.rstrip("\\/")) or root))]
     count, last = 0, time.monotonic()
     with _Background():
         while stack:
@@ -114,8 +129,8 @@ def scan(root: str, cancel: threading.Event | None = None, running: threading.Ev
                 break
             if running is not None and not running.is_set():
                 running.wait()
-            n = stack.pop()
-            tree.nodes[key(n.path)] = n
+            k, n = stack.pop()
+            tree.nodes[k] = n
             order.append(n)
             if n.path != root and is_hard_protected(n.path):
                 n.skipped = "系统文件，没有细看"
@@ -134,9 +149,9 @@ def scan(root: str, cancel: threading.Event | None = None, running: threading.Ev
                     if is_link_or_junction(e):
                         continue
                     if e.is_dir(follow_symlinks=False):
-                        child = Node(e.path, e.name, parent=key(n.path))
-                        n.dirs.append(key(e.path))
-                        stack.append(child)
+                        ck = key(e.path)                # 同一个字符串对象：父的 dirs、字典的键共用
+                        n.dirs.append(ck)
+                        stack.append((ck, Node(e.path, e.name, parent=k)))
                         continue
                     st = e.stat(follow_symlinks=False)
                 except OSError:
@@ -147,8 +162,9 @@ def scan(root: str, cancel: threading.Event | None = None, running: threading.Ev
                 n.newest = max(n.newest, st.st_mtime)
                 tops.append((e.name, size, st.st_mtime))
                 count += 1
-            tops.sort(key=lambda x: -x[1])
-            n.top = tops[:TOP_FILES]
+            if tops:
+                tops.sort(key=lambda x: -x[1])
+                n.top = _flat([f for i, f in enumerate(tops[:TOP_FILES]) if i < TOP_ALWAYS or f[1] >= TOP_MIN])
             now = time.monotonic()
             if on_progress and now - last >= every:
                 last = now
@@ -224,7 +240,7 @@ def view(tree: Tree, path: str, limit: int = 28) -> list[dict]:
         items.append({"kind": "dir", "name": c.name, "path": c.path, "size": c.size, "files": c.files,
                       "skipped": c.skipped, "newest": c.newest})
     shown = 0
-    for name, size, mtime in n.top:
+    for name, size, mtime in files_top(n):
         if size <= 0 or (n.size and size < n.size * 0.01 and len(items) >= 8):
             continue
         items.append({"kind": "file", "name": name, "path": os.path.join(n.path, name), "size": size,
@@ -276,9 +292,9 @@ def save(tree: Tree, folder: Path | None = None) -> None:
     try:
         f = _snap_file(tree.root, folder)
         f.parent.mkdir(parents=True, exist_ok=True)
-        data = {"v": 1, "root": tree.root, "at": tree.scanned_at, "s": tree.seconds, "total": tree.total,
+        data = {"v": 2, "root": tree.root, "at": tree.scanned_at, "s": tree.seconds, "total": tree.total,
                 "used": tree.used, "free": tree.free, "complete": tree.complete,
-                "n": [[n.path, n.name, n.parent, n.size, n.files, n.own, n.own_files, n.dirs, n.top, n.newest, n.skipped]
+                "n": [[n.path, n.name, n.parent, n.size, n.files, n.own, n.own_files, n.dirs, list(n.top), n.newest, n.skipped]
                       for n in tree.nodes.values()]}
         tmp = f.with_suffix(".tmp")
         with gzip.open(tmp, "wt", encoding="utf-8") as fh:
@@ -295,12 +311,14 @@ def load(root: str, folder: Path | None = None) -> Tree | None:
             data = json.load(fh)
     except (OSError, ValueError):
         return None
-    if data.get("v") != 1:
+    if data.get("v") not in (1, 2):
         return None
     t = Tree(data["root"], scanned_at=data["at"], seconds=data["s"], total=data["total"], used=data["used"],
              free=data["free"], complete=data["complete"])
     for p, name, parent, size, files, own, own_files, dirs, top, newest, skipped in data["n"]:
-        t.nodes[key(p)] = Node(p, name, parent, size, files, own, own_files, dirs, [tuple(x) for x in top], newest, skipped)
+        if data["v"] == 1:                          # 旧格式：[[名字, 大小, 时间], …]
+            top = _flat(top)
+        t.nodes[key(p)] = Node(p, name, parent, size, files, own, own_files, dirs, tuple(top), newest, skipped)
     return t
 
 
@@ -328,4 +346,6 @@ def known_snapshots(folder: Path | None = None) -> list[dict]:
         idx = json.loads(_index_file(folder).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
-    return sorted(idx.values(), key=lambda x: -x["at"])
+    folder = folder or snapshot_dir()
+    # 快照文件被清掉了（比如“留白自己的旧记录”）就不再列出来
+    return sorted((v for v in idx.values() if _snap_file(v["root"], folder).exists()), key=lambda x: -x["at"])

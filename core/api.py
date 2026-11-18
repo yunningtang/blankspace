@@ -378,7 +378,7 @@ class Api:
             return n.size, None                     # 文件夹：不用指纹（里面随时可能变）
         parent = t.node(os.path.dirname(path))
         if parent:
-            for name, size, mtime in parent.top:
+            for name, size, mtime in tree.files_top(parent):
                 if os.path.normcase(name) == os.path.normcase(os.path.basename(path)):
                     return size, (size, mtime)
         return 0, None

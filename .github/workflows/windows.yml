@@ -28,7 +28,9 @@ jobs:
           python-version: "3.12"
       - name: 安装依赖
         run: python -m pip install -r requirements.txt pytest
-      - name: 运行测试（真正的 Windows）
+      - name: 运行测试（真正的 Windows，包括真的移到回收站）
+        env:
+          LIUBAI_REAL_WINDOWS: "1"
         run: python -m pytest -q tests -rs
 
   build:
@@ -70,6 +72,36 @@ jobs:
           } catch { Write-Host "没下载到中文语言文件，安装界面用英文" }
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=${{ steps.v.outputs.version }}" packaging\installer.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed" }
+      - name: 安装、检查右键菜单、卸载（真正的 Windows）
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist\Liubai-Setup-*.exe | Select-Object -First 1
+          $p = Start-Process $setup.FullName -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/TASKS=contextmenu" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "安装失败：$($p.ExitCode)" }
+          $app = Join-Path $env:LOCALAPPDATA "Programs\Liubai\Liubai.exe"
+          if (-not (Test-Path $app)) { throw "装好以后找不到 $app" }
+          $keys = @(
+            @{ k = "HKCU:\Software\Classes\Directory\shell\Liubai\command"; arg = '"%1"' },
+            @{ k = "HKCU:\Software\Classes\Directory\Background\shell\Liubai\command"; arg = '"%V"' },
+            @{ k = "HKCU:\Software\Classes\Drive\shell\Liubai\command"; arg = '"%1"' }
+          )
+          foreach ($x in $keys) {
+            $v = (Get-Item $x.k).GetValue("")
+            Write-Host "$($x.k) = $v"
+            if ($v -ne "`"$app`" $($x.arg)") { throw "右键菜单的命令不对：$v" }
+          }
+          $label = (Get-Item "HKCU:\Software\Classes\Directory\shell\Liubai").GetValue("")
+          if ($label -ne "用留白看看这里") { throw "右键菜单的文字不对：$label" }
+          # 带着文件夹启动：能起来、不崩（几秒后关掉）
+          $run = Start-Process $app -ArgumentList "$env:USERPROFILE" -PassThru
+          Start-Sleep -Seconds 8
+          if ($run.HasExited -and $run.ExitCode -ne 0) { throw "带文件夹启动后退出了：$($run.ExitCode)" }
+          if (-not $run.HasExited) { Stop-Process -Id $run.Id -Force }
+          $un = Join-Path $env:LOCALAPPDATA "Programs\Liubai\unins000.exe"
+          $p = Start-Process $un -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -PassThru -Wait
+          Start-Sleep -Seconds 3
+          foreach ($x in $keys) { if (Test-Path $x.k) { throw "卸载以后右键菜单还在：$($x.k)" } }
+          Write-Host "安装、右键菜单、卸载都正常"
       - name: 便携版（不用安装）
         shell: pwsh
         run: Compress-Archive -Path dist\Liubai\* -DestinationPath "dist\Liubai-${{ steps.v.outputs.version }}-portable.zip"

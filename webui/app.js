@@ -220,7 +220,10 @@ function screenStart() {
   setBlocks(b.drives.map(d => ({ key: "drive:" + d.path, kind: "dir", name: d.name, size: d.used, frac: d.used / used, path: d.path })), .42);
   const recent = (b.recent || []).map(r => `<button class="item" data-open="${esc(r.root)}"><span class="n">${esc(base(r.root) || r.root)}</span><span class="s">${fmt(r.size)}</span>
       <span class="h">${ago(r.at)}看过${r.complete ? "" : "（没看完）"} · 直接显示上次的结果</span></button>`).join("");
-  return `<div class="meta">选一个地方看看</div>
+  return `<div class="oneclick"><button class="go" data-act="oneclick"${S.act.phase === "idle" ? "" : " disabled"}>一键清理</button>
+      <span class="h">只清可以放心清的：临时文件、错误报告、缩略图这类。先告诉你清什么，你点确定才开始</span></div>
+    <div class="act" id="act" data-buttons="[]"></div>
+    <div class="meta">选一个地方看看</div>
     <div class="line">留白只会看你选的地方。看之前不会读任何文件。</div>
     <div class="sec"><span>磁盘</span></div>
     <div class="list">${b.drives.map(d => `<button class="item" data-open="${esc(d.path)}" data-scan="1">
@@ -650,6 +653,14 @@ document.addEventListener("click", async e => {
   if (d.end) { S.endAsk = S.procs.groups.find(g => g.name === d.end); return render(); }
   switch (d.act) {
     case "consent": { const r = await call("set_consent", d.allow === "1"); S.boot.allow_changes = r.allow_changes; S.boot.consented = true; return afterConsent(); }
+    case "oneclick": {
+      // 只挑“可以放心清”的默认项，正开着的程序用的跳过；照常预检 → 确认 → 进回收站
+      S.act = { phase: "checking", plan: null }; render();
+      const c = await call("caches");
+      const keys = (c.items || []).filter(x => x.default && !x.busy && x.size > 0 && x.group === "系统" && !x.cost).map(x => x.key);
+      if (!keys.length) { S.act = { phase: "error", why: "现在没有需要清的。临时文件这类都很干净。" }; return render(); }
+      return askPlan("caches", keys);
+    }
     case "pick": { const r = viaWebview ? await call("pick_folder") : { path: prompt("文件夹路径") }; if (r && r.path) openPlace(r.path, false); return; }
     case "rescan": return openPlace(S.st.place.root, true);
     case "pause": await call("scan_control", "pause"); await refreshState(); return render();
