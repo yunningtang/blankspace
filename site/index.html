@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-CN" data-lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>留白 · Blankspace — 安静的 Windows 磁盘清理</title>
+<meta name="description" content="留白（Blankspace）：一个安静的 Windows 磁盘清理和文件整理工具。可用空间是纸，所有清理先问你，只进回收站。A calm disk cleaner for Windows.">
+<meta property="og:title" content="留白 · Blankspace">
+<meta property="og:description" content="A calm disk cleaner for Windows. Free space is the paper; nothing is removed without asking, and everything goes to the Recycle Bin.">
+<meta property="og:image" content="img/en/overview.jpg">
+<link rel="icon" href="img/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400&family=Noto+Serif+SC:wght@300;400;500;600&display=swap">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+
+<header class="top">
+  <a class="brand" href="#"><img src="img/logo.png" alt="" width="28" height="28"><span lang="zh">留白</span><span lang="en">Blankspace</span></a>
+  <nav>
+    <a href="#features"><span lang="zh">功能</span><span lang="en">Features</span></a>
+    <a href="#promise"><span lang="zh">安全</span><span lang="en">Safety</span></a>
+    <a href="#download"><span lang="zh">下载</span><span lang="en">Download</span></a>
+    <a href="https://github.com/yunningtang/blankspace">GitHub</a>
+    <button class="langbtn" id="langBtn" type="button"><span lang="zh">English</span><span lang="en">中文</span></button>
+  </nav>
+</header>
+
+<main>
+  <!-- ======================================================= 首屏 -->
+  <section class="hero">
+    <div class="hero-text">
+      <p class="eyebrow"><span lang="zh">Windows 磁盘清理 · 文件整理</span><span lang="en">Disk cleaner for Windows</span></p>
+      <h1><span lang="zh">留白</span><span lang="en">Blankspace</span></h1>
+      <p class="tagline"><span lang="zh">可用空间，是纸。</span><span lang="en">Free space is the paper.</span></p>
+      <p class="lede">
+        <span lang="zh">整个窗口是一张宣纸上的水墨：墨越深，占的空间越大；空着的纸，就是你的可用空间。清理之前，留白先告诉你每一项是什么、为什么、清了会怎样；清掉的东西只进回收站。</span>
+        <span lang="en">The window is a sheet of rice paper with ink on it: the darker the ink, the more space it takes, and the blank paper is your free space. Before anything is cleaned, Blankspace tells you what each item is, why, and what clearing it costs. Nothing goes further than the Recycle Bin.</span>
+      </p>
+      <div class="cta">
+        <a class="btn primary" data-dl="setup" href="https://github.com/yunningtang/blankspace/releases/latest">
+          <span lang="zh">下载安装版</span><span lang="en">Download installer</span>
+        </a>
+        <a class="btn" data-dl="portable" href="https://github.com/yunningtang/blankspace/releases/latest">
+          <span lang="zh">便携版 zip</span><span lang="en">Portable zip</span>
+        </a>
+      </div>
+      <p class="fine" id="verLine">
+        <span lang="zh">Windows 10 / 11 · 免费、开源 · 不联网 · 不需要管理员权限</span>
+        <span lang="en">Windows 10 / 11 · free and open source · offline · no admin rights</span>
+      </p>
+    </div>
+
+    <figure class="hero-map">
+      <canvas id="ink" aria-label="水墨演示 / ink demo"></canvas>
+      <div class="tip" id="tip" hidden></div>
+      <figcaption>
+        <p class="demo-msg" id="demoMsg"></p>
+        <div class="demo-btns">
+          <button class="link" id="demoBtn" type="button"></button>
+          <button class="link quiet" id="demoReset" type="button" hidden><span lang="zh">重来</span><span lang="en">Start over</span></button>
+        </div>
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- ======================================================= 一句话原则 -->
+  <section class="tenets">
+    <div><b>01</b><p><span lang="zh">你选了地方，它才去看。打开时不扫描任何东西。</span><span lang="en">It looks only where you choose. Nothing is scanned when it opens.</span></p></div>
+    <div><b>02</b><p><span lang="zh">每一项都说为什么，清了会怎样。</span><span lang="en">Every item says why, and what clearing it costs.</span></p></div>
+    <div><b>03</b><p><span lang="zh">动手之前先问你。只进回收站，挪动都能撤销。</span><span lang="en">It asks before acting. Only the Recycle Bin, and moves can be undone.</span></p></div>
+  </section>
+
+  <!-- ======================================================= 功能 -->
+  <section id="features" class="features">
+    <h2><span lang="zh">它能做什么</span><span lang="en">What it does</span></h2>
+
+    <article class="feat">
+      <div class="feat-text">
+        <h3><span lang="zh">你选了地方，才去看</span><span lang="en">It looks only where you choose</span></h3>
+        <p><span lang="zh">首页列出所有磁盘（C、D、移动硬盘）和常用文件夹。选一个，它在后台低优先级慢慢读，不拖慢电脑；可以暂停、取消。看过的地方记住结果，下次直接显示，不重复读硬盘。</span>
+           <span lang="en">The home page lists every drive (C, D, USB drives) and your common folders. Pick one and it reads slowly in the background at low priority, so your PC stays fast; pause or cancel any time. Places it has seen are remembered, so the disk isn’t read again.</span></p>
+        <p class="aside"><span lang="zh">最上面还有“一键清理”：只清临时文件、错误报告、缩略图这类可以放心清的。</span><span lang="en">At the top there’s also One-click clean, for the truly safe things only: temporary files, error reports, thumbnails.</span></p>
+      </div>
+      <div class="shot"><img data-shot="start" alt=""></div>
+    </article>
+
+    <article class="feat flip">
+      <div class="feat-text">
+        <h3><span lang="zh">点一块墨，走进去</span><span lang="en">Click the ink to walk in</span></h3>
+        <p><span lang="zh">每块墨是一个文件夹或文件，越大越深。点一下就进到那个文件夹，路径每一级都能点回去。右键可以打开、在文件夹中显示、复制路径、移到回收站、挪到别的盘。</span>
+           <span lang="en">Each patch of ink is a folder or file; bigger means darker. Click to step into a folder and click any part of the path to step back. Right-click to open, show in folder, copy the path, move to the Recycle Bin or move to another drive.</span></p>
+        <p class="aside"><span lang="zh">资源管理器里也能右键任何文件夹：“用留白看看这里”。</span><span lang="en">In File Explorer, right-click any folder: “Look here with Blankspace”.</span></p>
+      </div>
+      <div class="shot"><img data-shot="menu" alt=""></div>
+    </article>
+
+    <article class="feat">
+      <div class="feat-text">
+        <h3><span lang="zh">每个建议，都写“为什么”</span><span lang="en">Every suggestion says why</span></h3>
+        <p><span lang="zh">“已经解压过了，旁边有同名的文件夹。”“安装文件，2025 年 10 月下载。”“和图片里那份一模一样。”说人话，不说路径和扩展名。你自己的文件从不默认选中。</span>
+           <span lang="en">“Already extracted: there’s a folder with the same name next to it.” “Installer, downloaded in Oct 2025.” “Identical to the copy in Pictures.” Plain words, not paths. Your own files are never selected for you.</span></p>
+      </div>
+      <div class="shot"><img data-shot="look" alt=""></div>
+    </article>
+
+    <article class="feat flip">
+      <div class="feat-text">
+        <h3><span lang="zh">动手之前，先问你</span><span lang="en">It asks before it acts</span></h3>
+        <p><span lang="zh">按钮会原地变成一段说明：要动什么、多大、哪些不会动以及为什么。点确定才开始。默认是“只看”模式，要你在设置里打开，留白才会动文件。</span>
+           <span lang="en">The button turns into a short note right where it is: what will be touched, how much, and what won’t be and why. Nothing starts until you confirm. It ships in look-only mode; it touches files only after you allow it in Settings.</span></p>
+        <p class="aside"><span lang="zh">移到回收站不会马上腾出空间——清空回收站之后才会。留白不说“已释放”。</span><span lang="en">Moving to the Recycle Bin doesn’t free space yet; emptying it does. Blankspace never claims “freed”.</span></p>
+      </div>
+      <div class="shot"><img data-shot="confirm" alt=""></div>
+    </article>
+
+    <article class="feat">
+      <div class="feat-text">
+        <h3><span lang="zh">缓存，写明代价</span><span lang="en">Caches, with the cost spelled out</span></h3>
+        <p><span lang="zh">临时文件这类几乎没有代价的，默认选上。浏览器、开发工具、聊天软件的缓存默认不选，每一项写清楚清了会怎样：网页第一次打开会慢、依赖要重新下载。对应的程序开着，那一项就不清。</span>
+           <span lang="en">Things with almost no downside, like temporary files, are on by default. Browser, developer-tool and chat caches are off by default, and each says what clearing it costs: slower first page loads, dependencies downloaded again. If the program is running, its cache is skipped.</span></p>
+      </div>
+      <div class="shot"><img data-shot="caches" alt=""></div>
+    </article>
+
+    <article class="feat flip">
+      <div class="feat-text">
+        <h3><span lang="zh">整理，而不只是删除</span><span lang="en">Tidy, not just delete</span></h3>
+        <p><span lang="zh">IMG_2034、微信图片_… 改成拍摄时间；“终版”“最终版”“(1)”收进“旧版本”；截图录屏按月份收好；自己拍的视频挪到 D 盘。都只是挪位置、改名字，一键撤销。</span>
+           <span lang="en">IMG_2034 becomes the date it was taken; “final”, “final2” and “(1)” go into “Old versions”; screenshots are sorted by month; your own videos move to drive D. Only moves and renames, all undoable in one click.</span></p>
+      </div>
+      <div class="shot"><img data-shot="rename" alt=""></div>
+    </article>
+  </section>
+
+  <!-- ======================================================= 它不会做什么 -->
+  <section id="promise" class="promise">
+    <h2><span lang="zh">它不会做什么</span><span lang="en">What it won’t do</span></h2>
+    <ul>
+      <li><b><span lang="zh">不永久删除</span><span lang="en">Delete anything for good</span></b>
+        <span lang="zh">一律移到回收站。放不进回收站的（U 盘、网络盘、太大的文件）直接不动。</span><span lang="en">Everything goes to the Recycle Bin. Anything that can’t (USB sticks, network drives, huge files) is left alone.</span></li>
+      <li><b><span lang="zh">不碰系统和程序</span><span lang="en">Touch Windows or your programs</span></b>
+        <span lang="zh">Windows、Program Files、程序数据、OneDrive 一律不动。</span><span lang="en">Windows, Program Files, program data and OneDrive are never touched.</span></li>
+      <li><b><span lang="zh">不替你决定</span><span lang="en">Decide for you</span></b>
+        <span lang="zh">你的文件从不默认选中；每一次都先列出要动什么。</span><span lang="en">Your files are never preselected, and every action is listed first.</span></li>
+      <li><b><span lang="zh">不清空回收站</span><span lang="en">Empty your Recycle Bin</span></b>
+        <span lang="zh">清空了就找不回来，这一步留给你。</span><span lang="en">Once emptied, things are gone, so that step stays yours.</span></li>
+      <li><b><span lang="zh">不在后台偷偷读硬盘</span><span lang="en">Read your disk behind your back</span></b>
+        <span lang="zh">打开时不扫描；你选了地方才看，而且只读。</span><span lang="en">Nothing is scanned at launch; it reads only where you point it, read-only.</span></li>
+      <li><b><span lang="zh">不联网</span><span lang="en">Phone home</span></b>
+        <span lang="zh">没有账号、没有广告、不收集任何信息。代码全部公开。</span><span lang="en">No account, no ads, nothing collected. All of the code is public.</span></li>
+    </ul>
+    <p class="more"><a href="https://github.com/yunningtang/blankspace/blob/main/docs/%E5%AE%89%E5%85%A8%E4%B8%8E%E6%B5%81%E7%A8%8B.md"><span lang="zh">每一条安全规则和它防的是什么 →</span><span lang="en">Every safety rule and what it guards against (Chinese) →</span></a></p>
+  </section>
+
+  <!-- ======================================================= 下载 -->
+  <section id="download" class="download">
+    <img src="img/logo.png" alt="" width="96" height="96" class="dl-logo">
+    <h2><span lang="zh">下载留白</span><span lang="en">Get Blankspace</span></h2>
+    <p class="dl-ver" id="dlVer"></p>
+    <div class="cta center">
+      <a class="btn primary" data-dl="setup" href="https://github.com/yunningtang/blankspace/releases/latest">
+        <span lang="zh">安装版</span><span lang="en">Installer</span><small data-size="setup"></small>
+      </a>
+      <a class="btn" data-dl="portable" href="https://github.com/yunningtang/blankspace/releases/latest">
+        <span lang="zh">便携版</span><span lang="en">Portable</span><small data-size="portable"></small>
+      </a>
+    </div>
+    <ol class="steps">
+      <li><span lang="zh">双击安装，装在你自己的用户目录里，不需要管理员权限。可以选择加上右键菜单“用留白看看这里”。</span>
+          <span lang="en">Double-click to install into your own user folder; no admin rights needed. Optionally add “Look here with Blankspace” to the right-click menu.</span></li>
+      <li><span lang="zh">程序还没有数字签名。第一次打开如果看到“Windows 已保护你的电脑”，点“更多信息”→“仍要运行”。</span>
+          <span lang="en">It isn’t code-signed yet. If you see “Windows protected your PC” the first time, click “More info” → “Run anyway”.</span></li>
+      <li><span lang="zh">先选一个不重要的文件夹试一试。所有挪动都能撤销，移到回收站的可以从回收站还原。</span>
+          <span lang="en">Try it on a folder that doesn’t matter first. Every move can be undone, and anything in the Recycle Bin can be restored.</span></li>
+    </ol>
+    <p class="fine">
+      <span lang="zh">需要 Windows 10 或 11（64 位）和 Microsoft Edge WebView2（Windows 11 自带）。界面跟着 Windows 的语言显示中文或英文。</span>
+      <span lang="en">Needs Windows 10 or 11 (64-bit) and Microsoft Edge WebView2 (built into Windows 11). Chinese or English, following your Windows language.</span>
+      <br><a href="https://github.com/yunningtang/blankspace/releases"><span lang="zh">所有版本和 SHA256 校验值</span><span lang="en">All versions and SHA256 checksums</span></a>
+      · <a href="https://github.com/yunningtang/blankspace/blob/main/CHANGELOG.md"><span lang="zh">更新记录</span><span lang="en">Changelog (Chinese)</span></a>
+    </p>
+  </section>
+</main>
+
+<footer>
+  <img src="img/logo.png" alt="" width="22" height="22">
+  <span><span lang="zh">留白</span><span lang="en">Blankspace</span> · <a href="https://github.com/yunningtang/blankspace">github.com/yunningtang/blankspace</a></span>
+</footer>
+
+<script src="ink.js"></script>
+<script src="site.js"></script>
+</body>
+</html>

@@ -8,3 +8,4 @@ dist/
 logs/
 packaging/ChineseSimplified.isl
 !packaging/liubai.spec
+_site/

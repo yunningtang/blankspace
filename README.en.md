@@ -21,7 +21,7 @@
   <a href="https://github.com/yunningtang/blankspace/actions/workflows/windows.yml"><img src="https://github.com/yunningtang/blankspace/actions/workflows/windows.yml/badge.svg" alt="Windows tests"></a>
 </p>
 
-<p align="center"><b>English</b> · <a href="README.md">中文</a></p>
+<p align="center"><a href="https://yunningtang.github.io/blankspace/?lang=en">Website</a> · <b>English</b> · <a href="README.md">中文</a></p>
 
 ![Overview](docs/images/en/overview.jpg)
 

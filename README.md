@@ -22,7 +22,7 @@
   <a href="https://github.com/yunningtang/blankspace/actions/workflows/windows.yml"><img src="https://github.com/yunningtang/blankspace/actions/workflows/windows.yml/badge.svg" alt="Windows 测试"></a>
 </p>
 
-<p align="center"><a href="README.en.md">English</a> · <b>中文</b></p>
+<p align="center"><a href="https://yunningtang.github.io/blankspace/">介绍页</a> · <a href="README.en.md">English</a> · <b>中文</b></p>
 
 ![全貌](docs/images/overview.jpg)
 
@@ -43,7 +43,11 @@
 
 | 选一个地方 | 看看哪些可能不再需要 | 按拍摄时间重命名 |
 |---|---|---|
-| ![选一个地方](docs/images/start.jpg) | ![看看里面](docs/images/look-inside.jpg) | ![重命名](docs/images/rename.jpg) |
+| ![选一个地方](docs/images/start.jpg) | ![看看里面](docs/images/look.jpg) | ![重命名](docs/images/rename.jpg) |
+
+| 动手之前先问你 | 缓存写明代价 | 右键菜单 |
+|---|---|---|
+| ![确认](docs/images/confirm.jpg) | ![缓存](docs/images/caches.jpg) | ![右键菜单](docs/images/menu.jpg) |
 
 ## 它不会做什么
 
